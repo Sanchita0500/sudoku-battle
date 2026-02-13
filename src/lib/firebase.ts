@@ -12,8 +12,15 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// Initialize Firebase only if we have an API key
+let app;
+if (typeof window !== "undefined" || process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
+  app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+} else {
+  // Dummy app for build-time static generation if keys are missing
+  app = !getApps().length ? initializeApp({ ...firebaseConfig, apiKey: "dummy" }) : getApp();
+}
+
 const auth = getAuth(app);
 const db = getDatabase(app);
 
