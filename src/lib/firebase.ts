@@ -13,15 +13,19 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase only if we have an API key
+const isConfigured = !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+
 let app;
-if (typeof window !== "undefined" || process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
+if (isConfigured) {
   app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 } else {
-  // Dummy app for build-time static generation if keys are missing
-  app = !getApps().length ? initializeApp({ ...firebaseConfig, apiKey: "dummy" }) : getApp();
+  // Basic initialization for build-time without crashing
+  app = !getApps().length ? initializeApp({ ...firebaseConfig, apiKey: "LEGIT_FORMAT_BUT_FAKE_KEY_FOR_BUILD" }) : getApp();
 }
 
-const auth = getAuth(app);
-const db = getDatabase(app);
+// Only initialize services if we have a real config to avoid auth/invalid-api-key errors
+// During build/prerender, useEffects that use these won't run anyway.
+const auth = isConfigured ? getAuth(app) : {} as any;
+const db = isConfigured ? getDatabase(app) : {} as any;
 
 export { app, auth, db };
