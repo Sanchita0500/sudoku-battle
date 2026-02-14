@@ -2,14 +2,15 @@
 
 interface GameControlsProps {
     onNumberClick: (num: number) => void;
-    onClear: () => void;
+    onReset: () => void; // Changed from onClear
+    onClear?: () => void; // Keep for valid prop passing if needed, but we focus on Reset
     onUndo?: () => void;
     canUndo?: boolean;
     board: (number | null)[][];
     selectedNumber?: number | null;
 }
 
-export default function GameControls({ onNumberClick, onClear, onUndo, canUndo, board, selectedNumber }: GameControlsProps) {
+export default function GameControls({ onNumberClick, onReset, onUndo, canUndo, board, selectedNumber }: GameControlsProps) {
     // Count occurrences of each number on the board
     const countNumber = (num: number): number => {
         let count = 0;
@@ -80,12 +81,12 @@ export default function GameControls({ onNumberClick, onClear, onUndo, canUndo, 
                         </svg>
                     </button>
                     <button
-                        onClick={onClear}
-                        className="flex-1 bg-gradient-to-br from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-bold rounded-r-xl shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105 flex items-center justify-center"
-                        title="Clear Cell"
+                        onClick={onReset}
+                        className="flex-1 bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold rounded-r-xl shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105 flex items-center justify-center"
+                        title="Reset Board"
                     >
                         <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                     </button>
                 </div>

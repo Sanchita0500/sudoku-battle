@@ -203,18 +203,11 @@ export const useGameStore = create<GameState>((set, get) => ({
             startTime: room.startTime
         };
 
-        // Sync local player status and mistakes if playerId provided
-        if (localPlayerId && room.players?.[localPlayerId]) {
-            const localRemote = room.players[localPlayerId];
-            if (localRemote.status === 'won' || localRemote.status === 'lost') {
-                updatedState.status = localRemote.status;
-            }
-            // Always sync mistakes to keep UI consistent
-            updatedState.mistakes = localRemote.mistakes;
-        }
+        // If we are waiting/idle and room starts playing, we initialize the game
+        // AND we should NOT sync the player status from remote yet, because it might be stale (from previous game)
+        const isGameStarting = status === 'idle' && room.status === 'playing';
 
-        // If we are waiting/idle and room starts playing
-        if (status === 'idle' && room.status === 'playing') {
+        if (isGameStarting) {
             // Initialize board from room.puzzle
             const parsedBoard = parseBoard(room.puzzle);
             updatedState.board = parsedBoard;
@@ -223,6 +216,20 @@ export const useGameStore = create<GameState>((set, get) => ({
             updatedState.difficulty = room.difficulty;
             updatedState.status = 'playing';
             updatedState.mistakes = 0;
+            // Explicitly do not sync player status here, trust the initialization
+        } else {
+            // Only sync local player status if we are NOT just starting
+            if (localPlayerId && room.players?.[localPlayerId]) {
+                const localRemote = room.players[localPlayerId];
+                if (localRemote.status === 'won' || localRemote.status === 'lost') {
+                    // Check if we are currently playing, otherwise don't blindly accept
+                    if (status === 'playing') {
+                        updatedState.status = localRemote.status;
+                    }
+                }
+                // Always sync mistakes to keep UI consistent
+                updatedState.mistakes = localRemote.mistakes;
+            }
         }
 
         set(updatedState);

@@ -54,7 +54,7 @@ export default function Board({ selected, onSelect, highlightedNumber, isPencilM
     }, [selected, setCellValue, onSelect, isPencilMode, toggleNote]);
 
     return (
-        <div className="grid grid-cols-9 border-4 border-gray-800 dark:border-gray-300 bg-white dark:bg-gray-900 w-full max-w-xl aspect-square mx-auto shadow-2xl rounded-xl overflow-hidden">
+        <div className="grid grid-cols-9 border-4 border-gray-800 bg-white w-full max-w-xl aspect-square mx-auto shadow-2xl rounded-xl overflow-hidden select-none">
             {board.map((row, r) =>
                 row.map((val, c) => (
                     <Cell

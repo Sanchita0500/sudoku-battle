@@ -14,6 +14,7 @@ export default function Home() {
   const [mode, setMode] = useState<'menu' | 'difficulty-select' | 'single' | 'multi'>('menu');
   const [difficulty, setDifficulty] = useState<GameDifficulty>('easy');
   const [roomId, setRoomId] = useState<string | null>(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const handleJoinGame = (id: string) => {
     setRoomId(id);
@@ -73,20 +74,48 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 flex flex-col p-4">
       {/* Top Header with Sign Out */}
+      {/* Top Header with Profile Menu */}
       {user && (
-        <header className="w-full max-w-6xl mx-auto flex justify-end items-center py-4 px-6 animate-fade-in">
-          <div className="flex items-center gap-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-md p-2 pl-4 pr-3 rounded-2xl border border-white/20 shadow-sm transition-all hover:shadow-md">
-            <div className="flex flex-col items-end">
-              <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{user.displayName}</span>
-              <span className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">{user.email}</span>
-            </div>
-            <div className="h-8 w-[1px] bg-gray-200 dark:bg-gray-700 mx-1"></div>
+        <header className="w-full max-w-6xl mx-auto flex justify-end items-center py-4 px-6 animate-fade-in relative z-50">
+          <div className="relative">
             <button
-              onClick={signOut}
-              className="px-4 py-2 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold flex items-center justify-center shadow-md hover:shadow-lg transition-transform hover:scale-105 active:scale-95"
             >
-              Sign Out
+              {user.displayName ? user.displayName[0].toUpperCase() : 'U'}
             </button>
+
+            {showProfileMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowProfileMenu(false)}
+                ></div>
+                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-4 z-50 animate-pop-in origin-top-right">
+                  <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+                    <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-xl font-bold text-indigo-600 dark:text-indigo-400">
+                      {user.displayName ? user.displayName[0].toUpperCase() : 'U'}
+                    </div>
+                    <div className="flex flex-col overflow-hidden">
+                      <span className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">{user.displayName}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      signOut();
+                    }}
+                    className="w-full py-2.5 flex items-center justify-center gap-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-bold rounded-xl hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    Sign Out
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </header>
       )}

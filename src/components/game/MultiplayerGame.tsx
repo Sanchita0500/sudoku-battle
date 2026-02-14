@@ -13,6 +13,8 @@ import { countEmptyCells } from "@/lib/utils";
 import Timer from "./Timer";
 import { startGame as fireStartGame, Player, Room } from "@/lib/rooms";
 
+import HelpModal from "./HelpModal";
+
 interface MultiplayerGameProps {
     roomId: string;
     onExit: () => void;
@@ -20,15 +22,17 @@ interface MultiplayerGameProps {
 
 export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps) {
     const { user } = useAuth();
-    const { board, setCellValue, status, mistakes, difficulty, players, roomStatus, startTime, undo, history, resetGame } = useGameStore();
+    const { board, setCellValue, status, mistakes, difficulty, players, roomStatus, startTime, undo, history, resetGame, toggleNote, resetBoard } = useGameStore();
 
 
     const [selected, setSelected] = useState<[number, number] | null>(null);
     const [highlightedNumber, setHighlightedNumber] = useState<number | null>(null);
     const [fastPencilMode, setFastPencilMode] = useState(false);
     const [fastPencilNumber, setFastPencilNumber] = useState<number | null>(null);
+    const [pencilMode, setPencilMode] = useState(false);
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
     const [canCheckVictory, setCanCheckVictory] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
 
     // Reset game state on mount/unmount to prevent glitches
     useEffect(() => {
@@ -151,18 +155,35 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         if (status === 'won' || status === 'lost') return;
         setFastPencilNumber(num);
         setHighlightedNumber(num);
-        setSelected(null);
+
+        // Only deselect if NOT in pencil mode
+        if (!pencilMode) {
+            setSelected(null);
+        }
 
         if (!fastPencilMode && selected) {
-            setCellValue(selected[0], selected[1], num);
+            if (pencilMode) {
+                toggleNote(selected[0], selected[1], num);
+            } else {
+                setCellValue(selected[0], selected[1], num);
+            }
         }
     };
 
     const handleCellClick = (row: number, col: number) => {
         if (status === 'won' || status === 'lost') return;
+
+        const isAlreadySelected = selected && selected[0] === row && selected[1] === col;
+        const cellValue = board[row][col];
+
+        // Tap-to-Clear Logic (Normal Mode)
+        if (!fastPencilMode && isAlreadySelected && cellValue !== null) {
+            setCellValue(row, col, null);
+            return;
+        }
+
         setSelected([row, col]);
 
-        const cellValue = board[row][col];
         if (cellValue !== null) {
             setHighlightedNumber(cellValue);
             if (fastPencilMode) {
@@ -170,8 +191,19 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
             }
         }
 
-        if (fastPencilMode && fastPencilNumber !== null && cellValue === null) {
-            setCellValue(row, col, fastPencilNumber);
+        // Fast Fill Logic (renamed Fast Pencil in state)
+        if (fastPencilMode && fastPencilNumber !== null) {
+            if (cellValue === fastPencilNumber) {
+                // Toggle off
+                setCellValue(row, col, null);
+            } else if (cellValue === null) {
+                // Fill
+                if (pencilMode) {
+                    toggleNote(row, col, fastPencilNumber);
+                } else {
+                    setCellValue(row, col, fastPencilNumber);
+                }
+            }
         }
     };
 
@@ -273,29 +305,17 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
                     <Timer startTime={startTime} className="text-2xl md:text-5xl font-black text-indigo-600 dark:text-indigo-400 tabular-nums bg-white/50 dark:bg-gray-800/50 backdrop-blur-md px-4 md:px-8 py-2 md:py-3 rounded-2xl md:rounded-3xl border border-white/20 shadow-lg" />
 
-                    <div className="flex items-center gap-2 md:gap-4">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setFastPencilMode(!fastPencilMode);
-                            }}
-                            className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-200 shadow-sm ${fastPencilMode
-                                ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-green-200 dark:shadow-green-900/50"
-                                : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 border border-gray-100 dark:border-gray-700"
-                                }`}
-                            title={fastPencilMode ? "Fast Pencil ON" : "Fast Pencil OFF"}
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                            <span className="hidden md:inline">Fast Pencil {fastPencilMode ? "ON" : "OFF"}</span>
-                        </button>
-
-                        <div className="px-3 md:px-5 py-2 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm font-black text-indigo-500 tracking-widest uppercase text-[10px] md:text-xs">
-                            {difficulty}
-                        </div>
-                    </div>
+                    <button
+                        onClick={() => setShowHelp(true)}
+                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors shadow-sm"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
                 </div>
+
+                {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
 
                 {/* Player Progress Bar */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -323,8 +343,43 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                 </div>
             </div>
 
-            <main className="w-full flex flex-col md:flex-row gap-8 items-center md:items-start justify-center" onClick={() => setSelected(null)}>
-                <div className="flex flex-col items-center flex-1 max-w-xl animate-scale-in" onClick={(e) => e.stopPropagation()}>
+            <main className="w-full flex flex-col md:flex-row gap-4 items-center md:items-start justify-center text-center" onClick={() => setSelected(null)}>
+                <div className="flex flex-col items-center flex-1 max-w-xl animate-scale-in w-full px-1" onClick={(e) => e.stopPropagation()}>
+                    {/* Mobile Toolbar */}
+                    <div className="w-full flex items-center justify-end gap-3 mb-2 px-1">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setFastPencilMode(!fastPencilMode);
+                            }}
+                            className={`p-3 rounded-xl transition-all duration-200 shadow-sm border ${fastPencilMode
+                                ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-green-200 border-transparent"
+                                : "bg-white text-gray-500 border-gray-200"
+                                }`}
+                            title={`Fast Pencil: ${fastPencilMode ? "ON" : "OFF"}`}
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                        </button>
+
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setPencilMode(!pencilMode); // Use pencilMode state here
+                            }}
+                            className={`p-3 rounded-xl transition-all duration-200 shadow-sm border ${pencilMode
+                                ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-indigo-200 border-transparent"
+                                : "bg-white text-gray-500 border-gray-200"
+                                }`}
+                            title={`Pencil Mode: ${pencilMode ? "ON" : "OFF"}`}
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                        </button>
+                    </div>
+
                     <Board
                         selected={selected}
                         onSelect={(coords) => {
@@ -332,12 +387,15 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                             else setSelected(null);
                         }}
                         highlightedNumber={highlightedNumber}
+                        isPencilMode={pencilMode}
                     />
                     <GameControls
                         board={board}
                         onNumberClick={handleNumberClick}
-                        onClear={handleClear}
+                        onReset={resetBoard}
                         selectedNumber={fastPencilMode ? fastPencilNumber : null}
+                        onUndo={undo}
+                        canUndo={history.length > 0}
                     />
                 </div>
             </main>
@@ -357,7 +415,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                         </p>
                         <div className="flex gap-3 justify-center">
                             <button
-                                onClick={onExit}
+                                onClick={() => { confetti.reset(); onExit(); }}
                                 className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-red-500/20"
                             >
                                 YES, LEAVE
@@ -394,7 +452,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                         </p>
 
                         <button
-                            onClick={onExit}
+                            onClick={() => { confetti.reset(); onExit(); }}
                             className="w-full py-4 bg-white text-gray-900 rounded-xl font-bold text-lg hover:bg-gray-100 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg"
                         >
                             Leave Battle
@@ -426,7 +484,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                         </p>
 
                         <button
-                            onClick={onExit}
+                            onClick={() => { confetti.reset(); onExit(); }}
                             className="w-full py-4 bg-gradient-to-r from-yellow-400 to-amber-500 text-white rounded-xl font-black text-xl hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-orange-500/20"
                         >
                             CLAIM VICTORY

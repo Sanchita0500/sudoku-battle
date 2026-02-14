@@ -9,6 +9,8 @@ import GameControls from "./GameControls";
 import { useGameStore } from "@/hooks/useGameStore";
 import Timer from "./Timer";
 
+import HelpModal from "./HelpModal";
+
 interface SinglePlayerGameProps {
     difficulty: 'easy' | 'medium' | 'hard';
     onExit: () => void;
@@ -23,6 +25,7 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
     const [pencilMode, setPencilMode] = useState(false);
     const [startTime, setStartTime] = useState<number | null>(null);
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
 
     useEffect(() => {
         // Always start a fresh game when component mounts
@@ -37,25 +40,12 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
             setHighlightedNumber(num);
         }
 
-        // Clear cell selection when selecting from number pad
-        setSelected(null);
+        // Clear cell selection when selecting from number pad ONLY if not in pencil mode
+        if (!pencilMode) {
+            setSelected(null);
+        }
 
         if (!fastFillMode) {
-            // Normal mode: check if selected, then set value or note
-            // But wait, if I select from pad, 'selected' becomes null?
-            // "Clear cell selection when selecting from number pad" -> This line 37 in original file.
-            // If I click a number on pad, I usually want to fill the *currently selected cell*?
-            // The original logic was: setHighlightedNumber(num); setSelected(null);
-            // And then: if (!fastPencilMode) { if(selected) setCellValue... }
-            // But if we set Selected(null) before, then selected is null?
-            // Ah, standard state update batching? No.
-            // Original code:
-            // setFastPencilNumber(num);
-            // setHighlightedNumber(num);
-            // setSelected(null);
-            // if (!fastPencilMode && selected) { ... }
-            // This relies on closure 'selected' being the *old* value before re-render? Yes.
-
             if (selected) {
                 if (pencilMode) {
                     toggleNote(selected[0], selected[1], num);
@@ -67,9 +57,18 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
     };
 
     const handleCellClick = (row: number, col: number) => {
+        const isAlreadySelected = selected && selected[0] === row && selected[1] === col;
+        const cellValue = board[row][col];
+
+        // Tap-to-Clear Logic (Normal Mode)
+        // If the cell is already selected and has a value, clear it
+        if (!fastFillMode && isAlreadySelected && cellValue !== null) {
+            setCellValue(row, col, null);
+            return;
+        }
+
         setSelected([row, col]);
 
-        const cellValue = board[row][col];
         if (cellValue !== null) {
             setHighlightedNumber(cellValue);
             if (fastFillMode) {
@@ -77,13 +76,25 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
             }
         }
 
-        if (fastFillMode && fastFillNumber !== null && cellValue === null) {
-            // In fast fill mode, clicking an empty cell fills it with the selected number
-            if (pencilMode) {
-                toggleNote(row, col, fastFillNumber);
-            } else {
-                setCellValue(row, col, fastFillNumber);
+        if (fastFillMode && fastFillNumber !== null) {
+            // In fast fill mode:
+            // 1. If clicking the same number -> Clear (Toggle off)
+            // 2. If clicking empty cell -> Fill
+            // 3. If clicking different number -> Overwrite (handled implicitly by standard sudoku rules often, but let's implement validation check in store or just try to set)
+
+            if (cellValue === fastFillNumber) {
+                setCellValue(row, col, null);
+            } else if (cellValue === null) {
+                if (pencilMode) {
+                    toggleNote(row, col, fastFillNumber);
+                } else {
+                    setCellValue(row, col, fastFillNumber);
+                }
             }
+            // Optional: If cellValue !== null && cellValue !== fastFillNumber -> Overwrite? 
+            // Current Fast Fill usually only fills empty cells to avoid accidental destruction.
+            // User only asked: "if that cell is tapped again remove that number".
+            // So toggle logic covers the request.
         }
     };
 
@@ -99,6 +110,7 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
 
     const confirmQuit = () => {
         setShowQuitConfirm(false);
+        confetti.reset();
         onExit();
     };
 
@@ -168,47 +180,55 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
                         <Timer startTime={startTime} className="text-xl font-mono font-bold text-gray-800 dark:text-gray-200" />
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setFastFillMode(!fastFillMode);
-                            }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all duration-200 shadow-sm ${fastFillMode
-                                ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-green-200 dark:shadow-green-900/50"
-                                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-                                }`}
-                        >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                            </svg>
-                            Fast Fill {fastFillMode ? "ON" : "OFF"}
-                        </button>
-
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setPencilMode(!pencilMode);
-                            }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all duration-200 shadow-sm ${pencilMode
-                                ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-indigo-200 dark:shadow-indigo-900/50"
-                                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-                                }`}
-                        >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                            Pencil {pencilMode ? "ON" : "OFF"}
-                        </button>
-                    </div>
-
-                    <div className="px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg">
-                        <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 capitalize">{difficulty}</span>
-                    </div>
+                    <button
+                        onClick={() => setShowHelp(true)}
+                        className="w-8 h-8 flex items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
                 </div>
             </div>
 
-            <main className="w-full flex flex-col items-center justify-center transform scale-95 md:scale-100" onClick={(e) => e.stopPropagation()}>
+            {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+
+            <main className="w-full flex flex-col items-center justify-center transform origin-top" onClick={(e) => e.stopPropagation()}>
+                {/* Mobile Toolbar */}
+                <div className="w-full max-w-xl flex items-center justify-end gap-3 mb-2 px-2">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setFastFillMode(!fastFillMode);
+                        }}
+                        className={`p-3 rounded-xl transition-all duration-200 shadow-sm border ${fastFillMode
+                            ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-green-200 dark:shadow-green-900/50 border-transparent"
+                            : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700"
+                            }`}
+                        title={`Fast Fill: ${fastFillMode ? "ON" : "OFF"}`}
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </button>
+
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setPencilMode(!pencilMode);
+                        }}
+                        className={`p-3 rounded-xl transition-all duration-200 shadow-sm border ${pencilMode
+                            ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-indigo-200 dark:shadow-indigo-900/50 border-transparent"
+                            : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700"
+                            }`}
+                        title={`Pencil Mode: ${pencilMode ? "ON" : "OFF"}`}
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                    </button>
+                </div>
+
                 <Board
                     selected={selected}
                     onSelect={(coords) => {
@@ -224,7 +244,7 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
                 <GameControls
                     board={board}
                     onNumberClick={handleNumberClick}
-                    onClear={handleClear}
+                    onReset={handleTryAgain}
                     selectedNumber={fastFillMode ? fastFillNumber : null}
                     onUndo={undo}
                     canUndo={history.length > 0}
