@@ -18,18 +18,18 @@ function Cell({ value, onClick, isSelected, isInitial, isHighlighted, row, col, 
         <div
             onClick={onClick}
             className={twMerge(
-                "relative w-full h-full flex items-center justify-center text-xl md:text-2xl font-bold cursor-pointer select-none transition-all duration-150 border border-gray-300 dark:border-gray-700",
+                "relative w-full h-full flex items-center justify-center text-xl md:text-2xl font-bold cursor-pointer select-none transition-all duration-150 border border-gray-300",
                 // Grid Borders (Thick borders for 3x3 boxes)
-                col % 3 === 2 && col !== 8 && "border-r-[3px] border-r-gray-800 dark:border-r-gray-300",
-                row % 3 === 2 && row !== 8 && "border-b-[3px] border-b-gray-800 dark:border-b-gray-300",
+                col % 3 === 2 && col !== 8 && "border-r-[3px] border-r-gray-800",
+                row % 3 === 2 && row !== 8 && "border-b-[3px] border-b-gray-800",
                 // Selection
-                isSelected && "bg-indigo-200 dark:bg-indigo-900/50 ring-2 ring-inset ring-indigo-500 dark:ring-indigo-400",
+                isSelected && "bg-indigo-200 ring-2 ring-inset ring-indigo-500",
                 // Highlight matching numbers
-                !isSelected && isHighlighted && "bg-amber-100 dark:bg-amber-900/30",
-                // Initial Value
-                isInitial ? "text-gray-900 dark:text-gray-100 font-extrabold" : "text-indigo-600 dark:text-indigo-400 font-bold",
+                !isSelected && isHighlighted && "bg-amber-100",
+                // Initial Value - always dark text for visibility
+                isInitial ? "text-gray-900 font-extrabold" : "text-indigo-600 font-bold",
                 // Hover
-                !isSelected && "hover:bg-gray-100 dark:hover:bg-gray-800/50"
+                !isSelected && "hover:bg-gray-100"
             )}
         >
             {value !== null ? (
@@ -37,7 +37,7 @@ function Cell({ value, onClick, isSelected, isInitial, isHighlighted, row, col, 
             ) : (
                 <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-                        <div key={num} className="flex items-center justify-center text-[8px] md:text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                        <div key={num} className="flex items-center justify-center text-[8px] md:text-[10px] font-medium text-gray-500">
                             {notes?.includes(num) ? num : ''}
                         </div>
                     ))}

@@ -6,7 +6,7 @@ const config: Config = {
         "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
         "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
     ],
-    darkMode: 'selector',
+    darkMode: false, // Disable dark mode completely - force light mode always
     theme: {
         extend: {
             colors: {
