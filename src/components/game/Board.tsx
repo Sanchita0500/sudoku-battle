@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useGameStore } from "@/hooks/useGameStore";
 import Cell from "./Cell";
 
@@ -14,11 +14,17 @@ interface BoardProps {
 export default function Board({ selected, onSelect, highlightedNumber, isPencilMode = false }: BoardProps) {
     const { board, initialBoard, setCellValue, notes, toggleNote } = useGameStore();
 
-    // Get the value of the selected cell for highlighting
-    const selectedValue = selected ? board[selected[0]][selected[1]] : null;
+    // Memoize the value of the selected cell for highlighting
+    const selectedValue = useMemo(() =>
+        selected ? board[selected[0]][selected[1]] : null,
+        [selected, board]
+    );
 
-    // Determine which number to highlight: either from selected cell or from number pad
-    const numberToHighlight = highlightedNumber !== undefined ? highlightedNumber : selectedValue;
+    // Memoize which number to highlight: either from selected cell or from number pad
+    const numberToHighlight = useMemo(() =>
+        highlightedNumber !== undefined ? highlightedNumber : selectedValue,
+        [highlightedNumber, selectedValue]
+    );
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {

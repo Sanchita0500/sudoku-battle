@@ -1,3 +1,4 @@
+import React from "react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -12,7 +13,7 @@ interface CellProps {
     notes?: number[];
 }
 
-export default function Cell({ value, onClick, isSelected, isInitial, isHighlighted, row, col, notes }: CellProps) {
+function Cell({ value, onClick, isSelected, isInitial, isHighlighted, row, col, notes }: CellProps) {
     return (
         <div
             onClick={onClick}
@@ -45,3 +46,36 @@ export default function Cell({ value, onClick, isSelected, isInitial, isHighligh
         </div>
     );
 }
+
+// Custom comparison function for React.memo to handle notes array prop
+function arePropsEqual(prevProps: CellProps, nextProps: CellProps) {
+    // Check all primitive props
+    if (
+        prevProps.value !== nextProps.value ||
+        prevProps.isSelected !== nextProps.isSelected ||
+        prevProps.isInitial !== nextProps.isInitial ||
+        prevProps.isHighlighted !== nextProps.isHighlighted ||
+        prevProps.row !== nextProps.row ||
+        prevProps.col !== nextProps.col
+    ) {
+        return false;
+    }
+
+    // Deep compare notes array
+    const prevNotes = prevProps.notes || [];
+    const nextNotes = nextProps.notes || [];
+
+    if (prevNotes.length !== nextNotes.length) {
+        return false;
+    }
+
+    for (let i = 0; i < prevNotes.length; i++) {
+        if (prevNotes[i] !== nextNotes[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+export default React.memo(Cell, arePropsEqual);

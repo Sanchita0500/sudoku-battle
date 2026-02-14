@@ -1,6 +1,5 @@
-
 import { useEffect } from "react";
-import { onValue, ref } from "firebase/database";
+import { onValue, ref, onDisconnect } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { useGameStore } from "@/hooks/useGameStore";
 import { Room } from "@/lib/rooms";
@@ -11,23 +10,26 @@ export function useRoomListener(roomId: string | null) {
     const { setRemoteState } = useGameStore();
 
     useEffect(() => {
-        if (!roomId) return;
+        if (!roomId || !user) return;
 
         const roomRef = ref(db, `rooms/${roomId}`);
         const unsubscribe = onValue(roomRef, (snapshot) => {
             if (snapshot.exists()) {
                 const roomData = snapshot.val() as Room;
-
-                // Update local game state based on room data if needed
-                // Pass user.uid to sync local status from Firebase
-                setRemoteState(roomData, user?.uid);
-
-                // Handle opponent data
-                // This logic might need refinement to identify "who is the opponent"
-                // For now, we just pass the whole room data to store and let it decide or component decide
+                setRemoteState(roomData, user.uid);
             }
         });
 
-        return () => unsubscribe();
-    }, [roomId, setRemoteState, user?.uid]);
+        // Set up disconnect handler for dirty exits (tab close, crash)
+        const playerStatusRef = ref(db, `rooms/${roomId}/players/${user.uid}/status`);
+        const disconnectHandler = onDisconnect(playerStatusRef);
+        disconnectHandler.set("disconnected");
+
+        return () => {
+            unsubscribe();
+            // Cancel onDisconnect if we unmount cleanly (e.g. navigation), 
+            // because explicit exit logic handles that case.
+            disconnectHandler.cancel();
+        };
+    }, [roomId, setRemoteState, user]);
 }

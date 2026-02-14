@@ -17,7 +17,7 @@ interface SinglePlayerGameProps {
 }
 
 export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGameProps) {
-    const { board, startGame, setCellValue, resetBoard, status, mistakes, toggleNote, history, undo } = useGameStore();
+    const { board, initialBoard, startGame, setCellValue, resetBoard, status, mistakes, toggleNote, history, undo } = useGameStore();
     const [selected, setSelected] = useState<[number, number] | null>(null);
     const [highlightedNumber, setHighlightedNumber] = useState<number | null>(null);
     const [fastFillMode, setFastFillMode] = useState(false);
@@ -59,42 +59,36 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
     const handleCellClick = (row: number, col: number) => {
         const isAlreadySelected = selected && selected[0] === row && selected[1] === col;
         const cellValue = board[row][col];
+        const isInitialCell = initialBoard[row][col] !== null;
 
-        // Tap-to-Clear Logic (Normal Mode)
-        // If the cell is already selected and has a value, clear it
-        if (!fastFillMode && isAlreadySelected && cellValue !== null) {
+        // Tap-to-Clear Logic: tapping a user-filled cell again clears it
+        if (isAlreadySelected && cellValue !== null && !isInitialCell) {
             setCellValue(row, col, null);
             return;
         }
 
         setSelected([row, col]);
 
-        if (cellValue !== null) {
+        // If fast fill mode is active and clicking a filled cell, select that number
+        if (fastFillMode && cellValue !== null) {
             setHighlightedNumber(cellValue);
-            if (fastFillMode) {
-                setFastFillNumber(cellValue);
-            }
+            setFastFillNumber(cellValue);
+            return; // Don't fill when clicking a filled cell
         }
 
-        if (fastFillMode && fastFillNumber !== null) {
-            // In fast fill mode:
-            // 1. If clicking the same number -> Clear (Toggle off)
-            // 2. If clicking empty cell -> Fill
-            // 3. If clicking different number -> Overwrite (handled implicitly by standard sudoku rules often, but let's implement validation check in store or just try to set)
+        // Highlight the number regardless of mode
+        if (cellValue !== null) {
+            setHighlightedNumber(cellValue);
+        }
 
-            if (cellValue === fastFillNumber) {
-                setCellValue(row, col, null);
-            } else if (cellValue === null) {
-                if (pencilMode) {
-                    toggleNote(row, col, fastFillNumber);
-                } else {
-                    setCellValue(row, col, fastFillNumber);
-                }
+        // Fast Fill Logic - fill empty cell with selected number
+        if (fastFillMode && fastFillNumber !== null && cellValue === null) {
+            // Fill empty cell with the selected number
+            if (pencilMode) {
+                toggleNote(row, col, fastFillNumber);
+            } else {
+                setCellValue(row, col, fastFillNumber);
             }
-            // Optional: If cellValue !== null && cellValue !== fastFillNumber -> Overwrite? 
-            // Current Fast Fill usually only fills empty cells to avoid accidental destruction.
-            // User only asked: "if that cell is tapped again remove that number".
-            // So toggle logic covers the request.
         }
     };
 

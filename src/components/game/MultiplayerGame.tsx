@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import confetti from 'canvas-confetti';
+import { useDebounce } from "use-debounce";
+import confetti from "canvas-confetti";
 import Board from "./Board";
 import GameControls from "./GameControls";
 import { useGameStore } from "@/hooks/useGameStore";
@@ -22,7 +23,7 @@ interface MultiplayerGameProps {
 
 export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps) {
     const { user } = useAuth();
-    const { board, setCellValue, status, mistakes, difficulty, players, roomStatus, startTime, undo, history, resetGame, toggleNote, resetBoard } = useGameStore();
+    const { board, initialBoard, setCellValue, status, mistakes, difficulty, players, roomStatus, startTime, undo, history, resetGame, toggleNote, resetBoard } = useGameStore();
 
 
     const [selected, setSelected] = useState<[number, number] | null>(null);
@@ -124,32 +125,38 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         }
     }, [status]);
 
+    // Debounce board state changes to reduce Firebase writes
+    // Updates will fire at most once every 500ms instead of on every move
+    const [debouncedBoard] = useDebounce(board, 500);
+    const [debouncedMistakes] = useDebounce(mistakes, 500);
+    const [debouncedStatus] = useDebounce(status, 500);
+
     // Effect to update player progress & mistakes & status in Firebase
     useEffect(() => {
-        if (!user || !roomId || status === 'idle') return;
+        if (!user || !roomId || debouncedStatus === 'idle') return;
 
-        const progress = countEmptyCells(board);
-        const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
-        const roomRef = ref(db, `rooms/${roomId}`);
+        const progress = countEmptyCells(debouncedBoard);
+        const dbRef = ref(db);
 
-        const updates: { progress: number; mistakes: number; status: string; completed?: boolean } = {
-            progress,
-            mistakes,
-            status
+        // Batch all updates into a single object
+        const batchedUpdates: Record<string, any> = {
+            [`rooms/${roomId}/players/${user.uid}/progress`]: progress,
+            [`rooms/${roomId}/players/${user.uid}/mistakes`]: debouncedMistakes,
+            [`rooms/${roomId}/players/${user.uid}/status`]: debouncedStatus
         };
 
-        if (progress === 0 && mistakes < 3) {
-            updates.completed = true;
-            updates.status = "won";
-            // If you win by completion, the whole room is finished
-            update(roomRef, { status: "finished" });
-        } else if (mistakes >= 3) {
-            updates.status = "lost";
+        if (progress === 0 && debouncedMistakes < 3) {
+            batchedUpdates[`rooms/${roomId}/players/${user.uid}/completed`] = true;
+            batchedUpdates[`rooms/${roomId}/players/${user.uid}/status`] = "won";
+            batchedUpdates[`rooms/${roomId}/status`] = "finished"; // Update room status in same call
+        } else if (debouncedMistakes >= 3) {
+            batchedUpdates[`rooms/${roomId}/players/${user.uid}/status`] = "lost";
         }
 
-        update(playerRef, updates);
+        // Single atomic update instead of multiple calls
+        update(dbRef, batchedUpdates);
 
-    }, [board, mistakes, status, user, roomId]);
+    }, [debouncedBoard, debouncedMistakes, debouncedStatus, user, roomId]);
 
     const handleNumberClick = (num: number) => {
         if (status === 'won' || status === 'lost') return;
@@ -175,34 +182,35 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
         const isAlreadySelected = selected && selected[0] === row && selected[1] === col;
         const cellValue = board[row][col];
+        const isInitialCell = initialBoard[row][col] !== null;
 
-        // Tap-to-Clear Logic (Normal Mode)
-        if (!fastPencilMode && isAlreadySelected && cellValue !== null) {
+        // Tap-to-Clear Logic: tapping a user-filled cell again clears it
+        if (isAlreadySelected && cellValue !== null && !isInitialCell) {
             setCellValue(row, col, null);
             return;
         }
 
         setSelected([row, col]);
 
-        if (cellValue !== null) {
+        // If fast fill mode is active and clicking a filled cell, select that number
+        if (fastPencilMode && cellValue !== null) {
             setHighlightedNumber(cellValue);
-            if (fastPencilMode) {
-                setFastPencilNumber(cellValue);
-            }
+            setFastPencilNumber(cellValue);
+            return; // Don't fill when clicking a filled cell
         }
 
-        // Fast Fill Logic (renamed Fast Pencil in state)
-        if (fastPencilMode && fastPencilNumber !== null) {
-            if (cellValue === fastPencilNumber) {
-                // Toggle off
-                setCellValue(row, col, null);
-            } else if (cellValue === null) {
-                // Fill
-                if (pencilMode) {
-                    toggleNote(row, col, fastPencilNumber);
-                } else {
-                    setCellValue(row, col, fastPencilNumber);
-                }
+        // Highlight the number regardless of mode
+        if (cellValue !== null) {
+            setHighlightedNumber(cellValue);
+        }
+
+        // Fast Fill Logic - fill empty cell with selected number
+        if (fastPencilMode && fastPencilNumber !== null && cellValue === null) {
+            // Fill empty cell with the selected number
+            if (pencilMode) {
+                toggleNote(row, col, fastPencilNumber);
+            } else {
+                setCellValue(row, col, fastPencilNumber);
             }
         }
     };
@@ -234,6 +242,15 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
     const isBattleOngoing = useMemo(() => {
         return Object.values(players).some(p => p.status === 'playing');
     }, [players]);
+
+    const handleLeaveGame = () => {
+        if (status === 'playing' && user && roomId) {
+            const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
+            update(playerRef, { status: "lost" });
+        }
+        confetti.reset();
+        onExit();
+    };
 
     if (!gameStarted) {
         return (
@@ -415,7 +432,22 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                         </p>
                         <div className="flex gap-3 justify-center">
                             <button
-                                onClick={() => { confetti.reset(); onExit(); }}
+                                onClick={handleLeaveGame}
+                                className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-red-500/20"
+                            >
+                                YES, LEAVE
+                            </button>
+                            <button
+                                onClick={() => setShowQuitConfirm(false)}
+                                className="px-8 py-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-2xl font-black transition-all"
+                            >
+                                STAY
+                            </button>
+                        </div>
+
+                        <div className="flex gap-3 justify-center">
+                            <button
+                                onClick={handleLeaveGame}
                                 className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-red-500/20"
                             >
                                 YES, LEAVE

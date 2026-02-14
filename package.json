@@ -14,11 +14,13 @@
     "clsx": "^2.1.1",
     "firebase": "^12.9.0",
     "framer-motion": "^12.34.0",
+    "immer": "^11.1.4",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "sudoku-gen": "^1.0.2",
     "tailwind-merge": "^3.4.0",
+    "use-debounce": "^10.1.0",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
