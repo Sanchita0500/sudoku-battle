@@ -21,7 +21,7 @@ export default function Timer({ startTime, className }: TimerProps) {
         return () => clearInterval(interval);
     }, [startTime]);
 
-    const elapsed = startTime ? Math.floor((now - startTime) / 1000) : 0;
+    const elapsed = startTime ? Math.max(0, Math.floor((now - startTime) / 1000)) : 0;
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);

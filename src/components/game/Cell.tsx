@@ -9,14 +9,15 @@ interface CellProps {
     isHighlighted?: boolean;
     row: number;
     col: number;
+    notes?: number[];
 }
 
-export default function Cell({ value, onClick, isSelected, isInitial, isHighlighted, row, col }: CellProps) {
+export default function Cell({ value, onClick, isSelected, isInitial, isHighlighted, row, col, notes }: CellProps) {
     return (
         <div
             onClick={onClick}
             className={twMerge(
-                "w-full h-full flex items-center justify-center text-xl md:text-2xl font-bold cursor-pointer select-none transition-all duration-150 border border-gray-300 dark:border-gray-700",
+                "relative w-full h-full flex items-center justify-center text-xl md:text-2xl font-bold cursor-pointer select-none transition-all duration-150 border border-gray-300 dark:border-gray-700",
                 // Grid Borders (Thick borders for 3x3 boxes)
                 col % 3 === 2 && col !== 8 && "border-r-[3px] border-r-gray-800 dark:border-r-gray-300",
                 row % 3 === 2 && row !== 8 && "border-b-[3px] border-b-gray-800 dark:border-b-gray-300",
@@ -30,7 +31,17 @@ export default function Cell({ value, onClick, isSelected, isInitial, isHighligh
                 !isSelected && "hover:bg-gray-100 dark:hover:bg-gray-800/50"
             )}
         >
-            {value}
+            {value !== null ? (
+                value
+            ) : (
+                <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                        <div key={num} className="flex items-center justify-center text-[8px] md:text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                            {notes?.includes(num) ? num : ''}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

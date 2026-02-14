@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import confetti from 'canvas-confetti';
 import Board from "./Board";
 import GameControls from "./GameControls";
 import { useGameStore } from "@/hooks/useGameStore";
@@ -19,24 +20,44 @@ interface MultiplayerGameProps {
 
 export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps) {
     const { user } = useAuth();
-    const { board, setCellValue, status, mistakes, difficulty, players, roomStatus, startTime } = useGameStore();
+    const { board, setCellValue, status, mistakes, difficulty, players, roomStatus, startTime, undo, history, resetGame } = useGameStore();
+
+
     const [selected, setSelected] = useState<[number, number] | null>(null);
     const [highlightedNumber, setHighlightedNumber] = useState<number | null>(null);
     const [fastPencilMode, setFastPencilMode] = useState(false);
     const [fastPencilNumber, setFastPencilNumber] = useState<number | null>(null);
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
-    const [showConfetti, setShowConfetti] = useState(false);
+    const [canCheckVictory, setCanCheckVictory] = useState(false);
+
+    // Reset game state on mount/unmount to prevent glitches
+    useEffect(() => {
+        resetGame();
+        return () => resetGame();
+    }, []);
 
     // Sync with Firebase
     useRoomListener(roomId);
 
+    // Safety delay to prevent early victory trigger due to clock skew or race conditions
+    useEffect(() => {
+        if (status === 'playing' && roomStatus === 'playing') {
+            const timer = setTimeout(() => {
+                setCanCheckVictory(true);
+            }, 3000); // 3 seconds grace period
+
+            return () => clearTimeout(timer);
+        } else {
+            setCanCheckVictory(false);
+        }
+    }, [status, roomStatus]);
+
     // Automatic Victory Logic: If you are the only one left 'playing'
-    // Safety: Only check after game has started and been running for at least 2 seconds to avoid race conditions
     useEffect(() => {
         if (!user || status !== 'playing' || roomStatus !== 'playing') return;
 
-        // Wait at least 2 seconds after startTime to allow all clients to check in
-        if (!startTime || Date.now() - startTime < 2000) return;
+        // Wait for safety delay
+        if (!canCheckVictory) return;
 
         const otherPlayers = Object.values(players).filter(p => p.id !== user.uid);
         if (otherPlayers.length > 0) {
@@ -49,12 +70,53 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                 update(roomRef, { status: "finished" });
             }
         }
-    }, [players, status, user, roomId, roomStatus, startTime]);
+    }, [players, status, user, roomId, roomStatus, canCheckVictory]);
+
+    // Game Over if room is finished and you didn't win
+    useEffect(() => {
+        if (roomStatus === 'finished' && status === 'playing' && user) {
+            const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
+            update(playerRef, { status: "lost" });
+        }
+    }, [roomStatus, status, user, roomId]);
 
     // Victory Confetti
     useEffect(() => {
         if (status === 'won') {
-            setShowConfetti(true);
+            // Blow up from the bottom
+            const duration = 3000;
+            const end = Date.now() + duration;
+
+            const frame = () => {
+                confetti({
+                    particleCount: 5,
+                    angle: 60,
+                    spread: 55,
+                    origin: { x: 0 },
+                    colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e']
+                });
+                confetti({
+                    particleCount: 5,
+                    angle: 120,
+                    spread: 55,
+                    origin: { x: 1 },
+                    colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e']
+                });
+
+                if (Date.now() < end) {
+                    requestAnimationFrame(frame);
+                }
+            };
+
+            // Initial burst
+            confetti({
+                particleCount: 150,
+                spread: 100,
+                origin: { y: 0.8 },
+                zIndex: 200
+            });
+
+            frame();
         }
     }, [status]);
 
@@ -100,11 +162,16 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         if (status === 'won' || status === 'lost') return;
         setSelected([row, col]);
 
-        if (fastPencilMode && fastPencilNumber !== null) {
-            setCellValue(row, col, fastPencilNumber);
-        } else {
-            const cellValue = board[row][col];
+        const cellValue = board[row][col];
+        if (cellValue !== null) {
             setHighlightedNumber(cellValue);
+            if (fastPencilMode) {
+                setFastPencilNumber(cellValue);
+            }
+        }
+
+        if (fastPencilMode && fastPencilNumber !== null && cellValue === null) {
+            setCellValue(row, col, fastPencilNumber);
         }
     };
 
@@ -189,23 +256,6 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
     return (
         <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 p-4 md:p-8 font-sans text-gray-900 dark:text-gray-100 overflow-x-hidden">
-            {showConfetti && (
-                <div className="fixed inset-0 pointer-events-none z-[100] flex items-center justify-center overflow-hidden">
-                    {[...Array(50)].map((_, i) => (
-                        <div
-                            key={i}
-                            className="absolute w-2 h-4 bg-indigo-500 rounded-full animate-confetti"
-                            style={{
-                                left: `${Math.random() * 100}%`,
-                                backgroundColor: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e'][Math.floor(Math.random() * 5)],
-                                animationDelay: `${Math.random() * 3}s`,
-                                transform: `rotate(${Math.random() * 360}deg)`
-                            }}
-                        />
-                    ))}
-                </div>
-            )}
-
             {/* Battle Status Header */}
             <div className="w-full max-w-6xl mb-8 space-y-6">
                 <div className="flex flex-wrap gap-4 items-center justify-between">
@@ -218,29 +268,30 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                             </svg>
                         </button>
-                        <h1 className="text-2xl md:text-3xl font-black tracking-tight">Battle: <span className="font-mono text-indigo-600">{roomId}</span></h1>
+                        <h1 className="text-xl md:text-3xl font-black tracking-tight">Battle: <span className="font-mono text-indigo-600">{roomId}</span></h1>
                     </div>
 
-                    <Timer startTime={startTime} className="text-4xl md:text-5xl font-black text-indigo-600 dark:text-indigo-400 tabular-nums bg-white/50 dark:bg-gray-800/50 backdrop-blur-md px-8 py-3 rounded-3xl border border-white/20 shadow-lg" />
+                    <Timer startTime={startTime} className="text-2xl md:text-5xl font-black text-indigo-600 dark:text-indigo-400 tabular-nums bg-white/50 dark:bg-gray-800/50 backdrop-blur-md px-4 md:px-8 py-2 md:py-3 rounded-2xl md:rounded-3xl border border-white/20 shadow-lg" />
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 md:gap-4">
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setFastPencilMode(!fastPencilMode);
                             }}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-200 shadow-sm ${fastPencilMode
+                            className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-200 shadow-sm ${fastPencilMode
                                 ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-green-200 dark:shadow-green-900/50"
                                 : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 border border-gray-100 dark:border-gray-700"
                                 }`}
+                            title={fastPencilMode ? "Fast Pencil ON" : "Fast Pencil OFF"}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                             </svg>
-                            Fast Pencil {fastPencilMode ? "ON" : "OFF"}
+                            <span className="hidden md:inline">Fast Pencil {fastPencilMode ? "ON" : "OFF"}</span>
                         </button>
 
-                        <div className="px-5 py-2 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm font-black text-indigo-500 tracking-widest uppercase text-xs">
+                        <div className="px-3 md:px-5 py-2 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm font-black text-indigo-500 tracking-widest uppercase text-[10px] md:text-xs">
                             {difficulty}
                         </div>
                     </div>
@@ -324,38 +375,61 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
             {/* Game Over Overlays */}
             {status === 'lost' && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-md p-6">
-                    <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-[3rem] p-12 text-center shadow-2xl animate-pop-in">
-                        <div className="w-24 h-24 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-8 border-4 border-red-500">
-                            <svg className="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-md p-6 animate-fade-in">
+                    <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-[2rem] p-8 md:p-12 text-center shadow-2xl relative overflow-hidden">
+                        {/* Ambient Glow */}
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-red-500/30 rounded-full blur-3xl -z-10"></div>
+
+                        <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/20 rotate-12">
+                            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                             </svg>
                         </div>
-                        <h2 className="text-4xl font-black mb-4 uppercase">You&apos;re Out!</h2>
-                        <p className="text-gray-500 dark:text-gray-400 mb-8 font-bold text-lg">
+
+                        <h2 className="text-3xl md:text-4xl font-black mb-3 text-white tracking-tight">Knocked Out</h2>
+                        <p className="text-gray-300 mb-8 font-medium text-lg leading-relaxed">
                             {isBattleOngoing
-                                ? "You made 3 mistakes. Don't worry, you can still watch the battle!"
-                                : "The battle is over! Better luck next time."}
+                                ? "You've made 3 mistakes. You can still spectate the ongoing battle."
+                                : "The battle has ended. Better luck in the next round!"}
                         </p>
-                        <button onClick={onExit} className="w-full py-5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-[1.5rem] font-black text-xl hover:scale-105 active:scale-95 transition-all">
-                            LEAVE BATTLE
+
+                        <button
+                            onClick={onExit}
+                            className="w-full py-4 bg-white text-gray-900 rounded-xl font-bold text-lg hover:bg-gray-100 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg"
+                        >
+                            Leave Battle
                         </button>
                     </div>
                 </div>
             )}
 
             {status === 'won' && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-md p-6">
-                    <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-[3rem] p-12 text-center shadow-2xl animate-pop-in border-4 border-yellow-400">
-                        <div className="w-24 h-24 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center mx-auto mb-8 border-4 border-yellow-500 animate-bounce">
-                            <svg className="w-12 h-12 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                            </svg>
+                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-md p-6 animate-fade-in">
+                    <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-[2rem] p-8 md:p-12 text-center shadow-2xl relative overflow-hidden">
+                        {/* Ambient Glow */}
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-500/30 rounded-full blur-3xl -z-10"></div>
+
+                        <div className="w-24 h-24 mx-auto mb-6 relative">
+                            <div className="absolute inset-0 bg-yellow-400 rounded-full blur-xl opacity-40 animate-pulse"></div>
+                            <div className="relative w-full h-full bg-gradient-to-br from-yellow-400 to-amber-500 rounded-2xl flex items-center justify-center shadow-lg shadow-yellow-500/30 rotate-[-10deg]">
+                                <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                </svg>
+                            </div>
                         </div>
-                        <h2 className="text-5xl font-black mb-4">VICTORY!</h2>
-                        <p className="text-gray-500 dark:text-gray-400 mb-8 font-bold text-lg">Incredible! You were the first to finish.</p>
-                        <button onClick={onExit} className="w-full py-5 bg-gradient-to-r from-yellow-400 to-amber-500 text-white rounded-[1.5rem] font-black text-xl hover:scale-105 active:scale-95 transition-all">
-                            EXIT BATTLE
+
+                        <h2 className="text-4xl md:text-5xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-100 to-yellow-300 tracking-tight drop-shadow-sm">
+                            VICTORY
+                        </h2>
+                        <p className="text-yellow-100/90 mb-8 font-medium text-lg tracking-wide uppercase text-[10px] md:text-sm">
+                            First Place • Undisputed Champion
+                        </p>
+
+                        <button
+                            onClick={onExit}
+                            className="w-full py-4 bg-gradient-to-r from-yellow-400 to-amber-500 text-white rounded-xl font-black text-xl hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-orange-500/20"
+                        >
+                            CLAIM VICTORY
                         </button>
                     </div>
                 </div>

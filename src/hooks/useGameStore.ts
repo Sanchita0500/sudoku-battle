@@ -16,9 +16,14 @@ interface GameState {
     opponent: Player | null;
     players: Record<string, Player>;
 
+    history: { row: number, col: number, oldValue: number | null }[];
+    notes: number[][][];
+
     // Actions
     startGame: (difficulty: GameDifficulty) => void;
     setCellValue: (row: number, col: number, value: number | null) => void;
+    toggleNote: (row: number, col: number, num: number) => void;
+    undo: () => void;
     resetBoard: () => void;
     resetGame: () => void;
     setRemoteState: (room: Room, localPlayerId?: string) => void;
@@ -48,6 +53,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     startTime: null,
     mistakes: 0,
     opponent: null,
+    history: [],
+    notes: Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])),
 
     startGame: (difficulty) => {
         const { puzzle, solution } = generatePuzzle(difficulty);
@@ -61,11 +68,13 @@ export const useGameStore = create<GameState>((set, get) => ({
             status: 'playing',
             mistakes: 0, // Reset mistakes to 0
             opponent: null, // Reset opponent
+            history: [], // Reset history
+            notes: Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])), // Reset notes
         });
     },
 
     setCellValue: (row, col, value) => {
-        const { board, initialBoard, solution, mistakes, status } = get();
+        const { board, initialBoard, solution, mistakes, status, history, notes } = get();
 
         // Don't allow changes if game is over
         if (status === 'won' || status === 'lost') return;
@@ -87,21 +96,36 @@ export const useGameStore = create<GameState>((set, get) => ({
         // Update board
         const newBoard = [...board];
         newBoard[row] = [...newBoard[row]];
+        const oldValue = newBoard[row][col];
         newBoard[row][col] = value;
+
+        // Clear notes for this cell if a value is set
+        const newNotes = [...notes];
+        if (value !== null) {
+            newNotes[row] = [...newNotes[row]];
+            newNotes[row][col] = [];
+        }
+
+        // Push to history
+        const newHistory = [...history, { row, col, oldValue }];
 
         // Check for game over (3 mistakes)
         if (newMistakes >= 3) {
             set({
                 board: newBoard,
+                notes: newNotes,
                 mistakes: newMistakes,
-                status: 'lost'
+                status: 'lost',
+                history: newHistory
             });
             return;
         }
 
         set({
             board: newBoard,
-            mistakes: newMistakes
+            notes: newNotes,
+            mistakes: newMistakes,
+            history: newHistory
         });
 
         // Check win condition
@@ -111,8 +135,47 @@ export const useGameStore = create<GameState>((set, get) => ({
             const flatBoard = newBoard.flat().join('');
             if (flatBoard === solution) {
                 set({ status: 'won' });
+            } else {
+                // Board is full but incorrect -> Game Over
+                set({ status: 'lost' });
             }
         }
+    },
+
+    toggleNote: (row, col, num) => {
+        const { notes, status, initialBoard, board } = get();
+        if (status === 'won' || status === 'lost') return;
+        if (initialBoard[row][col] !== null) return;
+        if (board[row][col] !== null) return; // Don't add notes to filled cells
+
+        const newNotes = [...notes];
+        newNotes[row] = [...newNotes[row]];
+        const cellNotes = [...newNotes[row][col]];
+
+        if (cellNotes.includes(num)) {
+            newNotes[row][col] = cellNotes.filter(n => n !== num);
+        } else {
+            newNotes[row][col] = [...cellNotes, num].sort((a, b) => a - b);
+        }
+
+        set({ notes: newNotes });
+    },
+
+    undo: () => {
+        const { board, history, status } = get();
+        if (status === 'won' || status === 'lost' || history.length === 0) return;
+
+        const lastMove = history[history.length - 1];
+        const newHistory = history.slice(0, -1);
+
+        const newBoard = [...board];
+        newBoard[lastMove.row] = [...newBoard[lastMove.row]];
+        newBoard[lastMove.row][lastMove.col] = lastMove.oldValue;
+
+        set({
+            board: newBoard,
+            history: newHistory
+        });
     },
 
     resetBoard: () => {

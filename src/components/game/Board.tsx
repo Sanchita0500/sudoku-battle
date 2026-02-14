@@ -8,10 +8,11 @@ interface BoardProps {
     selected: [number, number] | null;
     onSelect: (coords: [number, number] | null) => void;
     highlightedNumber?: number | null;
+    isPencilMode?: boolean;
 }
 
-export default function Board({ selected, onSelect, highlightedNumber }: BoardProps) {
-    const { board, initialBoard, setCellValue } = useGameStore();
+export default function Board({ selected, onSelect, highlightedNumber, isPencilMode = false }: BoardProps) {
+    const { board, initialBoard, setCellValue, notes, toggleNote } = useGameStore();
 
     // Get the value of the selected cell for highlighting
     const selectedValue = selected ? board[selected[0]][selected[1]] : null;
@@ -37,7 +38,12 @@ export default function Board({ selected, onSelect, highlightedNumber }: BoardPr
 
             // Input
             if (e.key >= "1" && e.key <= "9") {
-                setCellValue(r, c, parseInt(e.key));
+                const num = parseInt(e.key);
+                if (isPencilMode) {
+                    toggleNote(r, c, num);
+                } else {
+                    setCellValue(r, c, num);
+                }
             } else if (e.key === "Backspace" || e.key === "Delete") {
                 setCellValue(r, c, null);
             }
@@ -45,7 +51,7 @@ export default function Board({ selected, onSelect, highlightedNumber }: BoardPr
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [selected, setCellValue, onSelect]);
+    }, [selected, setCellValue, onSelect, isPencilMode, toggleNote]);
 
     return (
         <div className="grid grid-cols-9 border-4 border-gray-800 dark:border-gray-300 bg-white dark:bg-gray-900 w-full max-w-xl aspect-square mx-auto shadow-2xl rounded-xl overflow-hidden">
@@ -60,6 +66,7 @@ export default function Board({ selected, onSelect, highlightedNumber }: BoardPr
                         isSelected={selected?.[0] === r && selected?.[1] === c}
                         isHighlighted={numberToHighlight !== null && val === numberToHighlight && !(selected?.[0] === r && selected?.[1] === c)}
                         onClick={() => onSelect([r, c])}
+                        notes={notes[r][c]}
                     />
                 ))
             )}

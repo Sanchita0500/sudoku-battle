@@ -109,9 +109,33 @@ export const joinRoom = async (roomId: string, playerId: string, playerName: str
 
 export const startGame = async (roomId: string) => {
     const roomRef = ref(db, `rooms/${roomId}`);
+    const snapshot = await get(roomRef);
+
+    if (!snapshot.exists()) {
+        throw new Error("Room not found");
+    }
+
+    const room = snapshot.val() as Room;
+    const { puzzle, solution } = generatePuzzle(room.difficulty);
+
+    const updatedPlayers = { ...room.players };
+    Object.keys(updatedPlayers).forEach(playerId => {
+        updatedPlayers[playerId] = {
+            ...updatedPlayers[playerId],
+            progress: 81, // Reset progress (81 empty cells)
+            mistakes: 0,
+            completed: false,
+            status: "playing",
+            timeTaken: 0
+        };
+    });
+
     await update(roomRef, {
         status: "playing",
-        startTime: serverTimestamp()
+        startTime: serverTimestamp(),
+        puzzle,
+        solution,
+        players: updatedPlayers
     });
 }
 
