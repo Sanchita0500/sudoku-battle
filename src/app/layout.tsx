@@ -17,6 +17,7 @@ import { AuthProvider } from "@/context/AuthContext";
 export const metadata: Metadata = {
   title: "Sudoku Battle",
   description: "Real-time competitive Sudoku",
+  colorScheme: "light", // Force light mode, prevent dark mode interference
 };
 
 export default function RootLayout({
