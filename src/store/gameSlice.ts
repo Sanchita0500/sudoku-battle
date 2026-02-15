@@ -136,7 +136,7 @@ export const createGameSlice: StateCreator<GameSlice, [["zustand/immer", never]]
         if (newMistakes >= 3) {
             newStatus = GameStatus.Lost;
             newEndTime = Date.now();
-        } else if (newStatus !== GameStatus.Lost && (progress <= 8 || newProgress === 0)) {
+        } else if (progress <= 8 || newProgress === 0) {
             // Victory check: 
             // 1. If progress is 0 (all filled) and no mistakes -> Win.
             // 2. OR if we are auto-filling (triggered by checking count), we assume the last moves will trigger win.
