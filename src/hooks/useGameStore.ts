@@ -12,8 +12,10 @@ interface GameState {
     difficulty: GameDifficulty;
     status: 'idle' | 'playing' | 'won' | 'lost';
     roomStatus: 'waiting' | 'playing' | 'finished';
+    ownerId: string | null; // Track room owner for host permissions
     startTime: number | null;
     mistakes: number;
+    mistakeCells: Set<string>; // Track cells with mistakes using "row,col" format
     opponent: Player | null;
     players: Record<string, Player>;
 
@@ -52,8 +54,10 @@ export const useGameStore = create<GameState>()(
         difficulty: 'easy',
         status: 'idle',
         roomStatus: 'waiting',
+        ownerId: null,
         startTime: null,
         mistakes: 0,
+        mistakeCells: new Set<string>(),
         opponent: null,
         history: [],
         notes: Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])),
@@ -69,6 +73,7 @@ export const useGameStore = create<GameState>()(
                 difficulty,
                 status: 'playing',
                 mistakes: 0, // Reset mistakes to 0
+                mistakeCells: new Set<string>(), // Reset mistake cells
                 opponent: null, // Reset opponent
                 history: [], // Reset history
                 notes: Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])), // Reset notes
@@ -76,13 +81,18 @@ export const useGameStore = create<GameState>()(
         },
 
         setCellValue: (row, col, value) => {
-            const { board, initialBoard, solution, mistakes, status, history, notes } = get();
+            const { board, initialBoard, solution, mistakes, mistakeCells, status, history, notes } = get();
 
             // Don't allow changes if game is over
             if (status === 'won' || status === 'lost') return;
 
             // Don't modify if cell is part of initial puzzle
             if (initialBoard[row][col] !== null) return;
+
+            const cellKey = `${row},${col}`;
+
+            // Create a NEW Set to ensure Zustand detects the change
+            let newMistakeCells = new Set(mistakeCells);
 
             // Check validity
             let isValid = true;
@@ -92,7 +102,19 @@ export const useGameStore = create<GameState>()(
                 isValid = validateMove(solution, row, col, value);
                 if (!isValid) {
                     newMistakes = mistakes + 1;
+                    newMistakeCells.add(cellKey); // Mark cell as mistake
+                    // Force new Set instance for Zustand reactivity
+                    newMistakeCells = new Set(newMistakeCells);
+                } else {
+                    newMistakeCells.delete(cellKey); // Remove from mistakes if correct
+                    // Force new Set instance for Zustand reactivity
+                    newMistakeCells = new Set(newMistakeCells);
                 }
+            } else {
+                // If clearing cell, remove from mistake tracking
+                newMistakeCells.delete(cellKey);
+                // Force new Set instance for Zustand reactivity
+                newMistakeCells = new Set(newMistakeCells);
             }
 
             // Update board
@@ -117,6 +139,7 @@ export const useGameStore = create<GameState>()(
                     board: newBoard,
                     notes: newNotes,
                     mistakes: newMistakes,
+                    mistakeCells: newMistakeCells,
                     status: 'lost',
                     history: newHistory
                 });
@@ -127,6 +150,7 @@ export const useGameStore = create<GameState>()(
                 board: newBoard,
                 notes: newNotes,
                 mistakes: newMistakes,
+                mistakeCells: newMistakeCells,
                 history: newHistory
             });
 
@@ -164,7 +188,7 @@ export const useGameStore = create<GameState>()(
         },
 
         undo: () => {
-            const { board, history, status } = get();
+            const { board, history, status, mistakeCells, mistakes } = get();
             if (status === 'won' || status === 'lost' || history.length === 0) return;
 
             const lastMove = history[history.length - 1];
@@ -174,9 +198,22 @@ export const useGameStore = create<GameState>()(
             newBoard[lastMove.row] = [...newBoard[lastMove.row]];
             newBoard[lastMove.row][lastMove.col] = lastMove.oldValue;
 
+            // Remove the cell from mistakeCells if it was a mistake
+            const cellKey = `${lastMove.row},${lastMove.col}`;
+            const newMistakeCells = new Set(mistakeCells);
+            newMistakeCells.delete(cellKey);
+
+            // Create new Set instance to ensure Zustand detects change
+            const finalMistakeCells = new Set(newMistakeCells);
+
+            // Recalculate mistakes count based on remaining mistake cells
+            const newMistakes = finalMistakeCells.size;
+
             set({
                 board: newBoard,
-                history: newHistory
+                history: newHistory,
+                mistakeCells: finalMistakeCells,
+                mistakes: newMistakes
             });
         },
 
@@ -186,6 +223,7 @@ export const useGameStore = create<GameState>()(
                 board: structuredClone(initialBoard), // Reset to initial board using native API
                 status: 'playing',
                 mistakes: 0,
+                mistakeCells: new Set<string>(), // Clear mistake cells
             });
         },
 
@@ -202,6 +240,7 @@ export const useGameStore = create<GameState>()(
             const updatedState: Partial<GameState> = {
                 players: room.players || {},
                 roomStatus: room.status,
+                ownerId: room.ownerId || null, // Sync ownerId
                 startTime: room.startTime
             };
 

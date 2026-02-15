@@ -12,7 +12,7 @@ interface BoardProps {
 }
 
 export default function Board({ selected, onSelect, highlightedNumber, isPencilMode = false }: BoardProps) {
-    const { board, initialBoard, setCellValue, notes, toggleNote } = useGameStore();
+    const { board, initialBoard, setCellValue, notes, toggleNote, mistakeCells } = useGameStore();
 
     // Memoize the value of the selected cell for highlighting
     const selectedValue = useMemo(() =>
@@ -71,6 +71,7 @@ export default function Board({ selected, onSelect, highlightedNumber, isPencilM
                         isInitial={initialBoard[r][c] !== null}
                         isSelected={selected?.[0] === r && selected?.[1] === c}
                         isHighlighted={numberToHighlight !== null && val === numberToHighlight && !(selected?.[0] === r && selected?.[1] === c)}
+                        hasMistake={mistakeCells.has(`${r},${c}`)}
                         onClick={() => onSelect([r, c])}
                         notes={notes[r][c]}
                     />

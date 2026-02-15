@@ -23,9 +23,10 @@ interface MultiplayerGameProps {
 
 export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps) {
     const { user } = useAuth();
-    const { board, initialBoard, setCellValue, status, mistakes, difficulty, players, roomStatus, startTime, undo, history, resetGame, toggleNote, resetBoard } = useGameStore();
+    const { board, initialBoard, setCellValue, status, mistakes, difficulty, players, roomStatus, startTime, undo, history, resetGame, toggleNote, resetBoard, ownerId } = useGameStore();
 
-
+    // Use ownerId from Firebase room data to determine host
+    const isHost = user && ownerId === user.uid;
     const [selected, setSelected] = useState<[number, number] | null>(null);
     const [highlightedNumber, setHighlightedNumber] = useState<number | null>(null);
     const [fastPencilMode, setFastPencilMode] = useState(false);
@@ -163,9 +164,13 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         setFastPencilNumber(num);
         setHighlightedNumber(num);
 
-        // Only deselect if NOT in pencil mode
-        if (!pencilMode) {
-            setSelected(null);
+        if (fastPencilMode) {
+            // DON'T clear selection in fast fill mode - allows one-click filling
+        } else {
+            // Only deselect if NOT in pencil mode and NOT in fast fill
+            if (!pencilMode) {
+                setSelected(null);
+            }
         }
 
         if (!fastPencilMode && selected) {
@@ -190,29 +195,28 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
             return;
         }
 
-        setSelected([row, col]);
-
-        // If fast fill mode is active and clicking a filled cell, select that number
-        if (fastPencilMode && cellValue !== null) {
-            setHighlightedNumber(cellValue);
-            setFastPencilNumber(cellValue);
-            return; // Don't fill when clicking a filled cell
-        }
-
-        // Highlight the number regardless of mode
-        if (cellValue !== null) {
-            setHighlightedNumber(cellValue);
-        }
-
-        // Fast Fill Logic - fill empty cell with selected number
+        // One-Click Fast Fill: if fast fill is active and number selected and cell is empty, fill immediately
         if (fastPencilMode && fastPencilNumber !== null && cellValue === null) {
-            // Fill empty cell with the selected number
+            // Fill directly WITHOUT selecting cell first (true one-click fill)
             if (pencilMode) {
                 toggleNote(row, col, fastPencilNumber);
             } else {
                 setCellValue(row, col, fastPencilNumber);
             }
+            return;  // Don't select after filling
         }
+
+        // If clicking a filled cell, highlight and sync the number to pad
+        if (cellValue !== null) {
+            setHighlightedNumber(cellValue);
+            setFastPencilNumber(cellValue); // Sync to fast fill - this will trigger pad selection
+            setSelected([row, col]);
+            return;
+        }
+
+        // Normal click on empty cell: select it
+        setSelected([row, col]);
+        setHighlightedNumber(null);
     };
 
     const handleClear = () => {
@@ -235,7 +239,6 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         return Object.values(players).sort((a, b) => a.progress - b.progress);
     }, [players]);
 
-    const isHost = user && Object.keys(players)[0] === user.uid;
     const gameStarted = roomStatus !== 'waiting';
 
     // Check if battle is still ongoing for the loser
@@ -430,21 +433,6 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                         <p className="mb-8 text-gray-500 dark:text-gray-400 font-bold">
                             Leaving now will forfeit your position in this battle. Are you sure?
                         </p>
-                        <div className="flex gap-3 justify-center">
-                            <button
-                                onClick={handleLeaveGame}
-                                className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-red-500/20"
-                            >
-                                YES, LEAVE
-                            </button>
-                            <button
-                                onClick={() => setShowQuitConfirm(false)}
-                                className="px-8 py-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-2xl font-black transition-all"
-                            >
-                                STAY
-                            </button>
-                        </div>
-
                         <div className="flex gap-3 justify-center">
                             <button
                                 onClick={handleLeaveGame}

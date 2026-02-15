@@ -38,11 +38,13 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
         setFastFillNumber(num);
         if (fastFillMode) {
             setHighlightedNumber(num);
-        }
-
-        // Clear cell selection when selecting from number pad ONLY if not in pencil mode
-        if (!pencilMode) {
-            setSelected(null);
+            // DON'T clear selection in fast fill mode - this allows one-click filling
+            // The cell click handler will do the filling directly
+        } else {
+            // Only clear selection when NOT in fast fill mode
+            if (!pencilMode) {
+                setSelected(null);
+            }
         }
 
         if (!fastFillMode) {
@@ -67,29 +69,28 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
             return;
         }
 
-        setSelected([row, col]);
-
-        // If fast fill mode is active and clicking a filled cell, select that number
-        if (fastFillMode && cellValue !== null) {
-            setHighlightedNumber(cellValue);
-            setFastFillNumber(cellValue);
-            return; // Don't fill when clicking a filled cell
-        }
-
-        // Highlight the number regardless of mode
-        if (cellValue !== null) {
-            setHighlightedNumber(cellValue);
-        }
-
-        // Fast Fill Logic - fill empty cell with selected number
+        // One-Click Fast Fill: if fast fill is active and number selected and cell is empty, fill immediately
         if (fastFillMode && fastFillNumber !== null && cellValue === null) {
-            // Fill empty cell with the selected number
+            // Fill directly WITHOUT selecting cell first (true one-click fill)
             if (pencilMode) {
                 toggleNote(row, col, fastFillNumber);
             } else {
                 setCellValue(row, col, fastFillNumber);
             }
+            return; // Don't select after filling
         }
+
+        // If clicking a filled cell, highlight and sync the number to pad
+        if (cellValue !== null) {
+            setHighlightedNumber(cellValue);
+            setFastFillNumber(cellValue); // Sync to fast fill - this will trigger pad selection
+            setSelected([row, col]);
+            return;
+        }
+
+        // Normal click on empty cell: select it
+        setSelected([row, col]);
+        setHighlightedNumber(null);
     };
 
     const handleClear = () => {

@@ -16,6 +16,7 @@ export interface Player {
 
 export interface Room {
     id: string;
+    ownerId: string; // Add ownerId to identify the host reliably
     status: "waiting" | "playing" | "finished";
     puzzle: string;
     solution: string;
@@ -45,6 +46,7 @@ export const createRoom = async (playerId: string, playerName: string, difficult
 
         const roomData: Room = {
             id: roomId,
+            ownerId: playerId, // Set the creator as owner
             status: "waiting",
             puzzle,
             solution,

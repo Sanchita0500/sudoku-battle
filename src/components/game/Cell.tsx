@@ -8,12 +8,13 @@ interface CellProps {
     isSelected?: boolean;
     isInitial?: boolean;
     isHighlighted?: boolean;
+    hasMistake?: boolean;
     row: number;
     col: number;
     notes?: number[];
 }
 
-function Cell({ value, onClick, isSelected, isInitial, isHighlighted, row, col, notes }: CellProps) {
+function Cell({ value, onClick, isSelected, isInitial, isHighlighted, hasMistake, row, col, notes }: CellProps) {
     return (
         <div
             onClick={onClick}
@@ -22,14 +23,16 @@ function Cell({ value, onClick, isSelected, isInitial, isHighlighted, row, col, 
                 // Grid Borders (Thick borders for 3x3 boxes)
                 col % 3 === 2 && col !== 8 && "border-r-[3px] border-r-gray-800",
                 row % 3 === 2 && row !== 8 && "border-b-[3px] border-b-gray-800",
+                // Mistake indicator - highest priority
+                hasMistake && "bg-red-100 border-red-400 ring-2 ring-red-300",
                 // Selection
-                isSelected && "bg-indigo-200 ring-2 ring-inset ring-indigo-500",
+                !hasMistake && isSelected && "bg-indigo-200 ring-2 ring-inset ring-indigo-500",
                 // Highlight matching numbers
-                !isSelected && isHighlighted && "bg-amber-100",
+                !hasMistake && !isSelected && isHighlighted && "bg-amber-100",
                 // Initial Value - always dark text for visibility
                 isInitial ? "text-gray-900 font-extrabold" : "text-indigo-600 font-bold",
                 // Hover
-                !isSelected && "hover:bg-gray-100"
+                !hasMistake && !isSelected && "hover:bg-gray-100"
             )}
         >
             {value !== null ? (
@@ -55,8 +58,10 @@ function arePropsEqual(prevProps: CellProps, nextProps: CellProps) {
         prevProps.isSelected !== nextProps.isSelected ||
         prevProps.isInitial !== nextProps.isInitial ||
         prevProps.isHighlighted !== nextProps.isHighlighted ||
+        prevProps.hasMistake !== nextProps.hasMistake ||
         prevProps.row !== nextProps.row ||
-        prevProps.col !== nextProps.col
+        prevProps.col !== nextProps.col ||
+        prevProps.onClick !== nextProps.onClick
     ) {
         return false;
     }
