@@ -1,13 +1,14 @@
 import { useEffect } from "react";
 import { onValue, ref, onDisconnect } from "firebase/database";
 import { db } from "@/lib/firebase";
-import { useGameStore } from "@/hooks/useGameStore";
+import { useMultiplayerStore } from "@/hooks/useMultiplayerStore";
 import { Room } from "@/lib/rooms";
 import { useAuth } from "@/context/AuthContext";
+import { GameStatus } from "@/lib/types";
 
 export function useRoomListener(roomId: string | null) {
     const { user } = useAuth();
-    const { setRemoteState } = useGameStore();
+    const { setRemoteState } = useMultiplayerStore();
 
     useEffect(() => {
         if (!roomId || !user) return;
@@ -23,7 +24,7 @@ export function useRoomListener(roomId: string | null) {
         // Set up disconnect handler for dirty exits (tab close, crash)
         const playerStatusRef = ref(db, `rooms/${roomId}/players/${user.uid}/status`);
         const disconnectHandler = onDisconnect(playerStatusRef);
-        disconnectHandler.set("disconnected");
+        disconnectHandler.set(GameStatus.Disconnected);
 
         return () => {
             unsubscribe();

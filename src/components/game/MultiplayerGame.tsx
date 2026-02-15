@@ -1,40 +1,124 @@
-"use client";
-
 import { useEffect, useState, useMemo } from "react";
 import { useDebounce } from "use-debounce";
 import confetti from "canvas-confetti";
 import Board from "./Board";
 import GameControls from "./GameControls";
-import { useGameStore } from "@/hooks/useGameStore";
+import { useMultiplayerStore } from "@/hooks/useMultiplayerStore";
+import { useGameLogic } from "@/hooks/useGameLogic";
 import { useAuth } from "@/context/AuthContext";
 import { useRoomListener } from "@/hooks/useRoomListener";
 import { ref, update, onValue } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { countEmptyCells } from "@/lib/utils";
 import Timer from "./Timer";
-import { startGame as fireStartGame, Player, Room } from "@/lib/rooms";
+import { startGame as fireStartGame } from "@/lib/rooms";
+import { GameStatus, RoomStatus } from "@/lib/types";
 
 import HelpModal from "./HelpModal";
+import GameModal from "./GameModal";
 
 interface MultiplayerGameProps {
     roomId: string;
     onExit: () => void;
 }
 
+import { useAutoFill } from "@/hooks/useAutoFill";
+
 export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps) {
     const { user } = useAuth();
-    const { board, initialBoard, setCellValue, status, mistakes, difficulty, players, roomStatus, startTime, undo, history, resetGame, toggleNote, resetBoard, ownerId } = useGameStore();
+    const { board, initialBoard, setCellValue, status, mistakes, players, roomStatus, startTime, endTime, undo, history, resetGame, toggleNote, resetBoard, ownerId, mistakeCells, notes, setRemoteState, progress, solution, difficulty } = useMultiplayerStore();
+
+    // Auto-fill Magic Hook for Multiplayer? 
+    // Yes, if a player is close to finishing, we help them finish.
+    const { activeAutoFillCell } = useAutoFill({
+        progress,
+        board,
+        solution,
+        setCellValue,
+        status,
+        mistakeCells
+    });
 
     // Use ownerId from Firebase room data to determine host
     const isHost = user && ownerId === user.uid;
-    const [selected, setSelected] = useState<[number, number] | null>(null);
-    const [highlightedNumber, setHighlightedNumber] = useState<number | null>(null);
-    const [fastPencilMode, setFastPencilMode] = useState(false);
-    const [fastPencilNumber, setFastPencilNumber] = useState<number | null>(null);
-    const [pencilMode, setPencilMode] = useState(false);
+    // Calculate duration for victory modal
+    const gameDuration = startTime && endTime ? Math.floor((endTime - startTime) / 1000) : 0;
+
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
     const [canCheckVictory, setCanCheckVictory] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [isConnected, setIsConnected] = useState(true);
+
+    // Monitoring connection status
+    useEffect(() => {
+        const connectedRef = ref(db, ".info/connected");
+        const unsubscribe = onValue(connectedRef, (snap) => {
+            if (snap.val() === true) {
+                setIsConnected(true);
+            } else {
+                setIsConnected(false);
+            }
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    // Check if we were removed from the room (e.g. by our own onDisconnect handler triggering on a brief outage)
+    useEffect(() => {
+        if (!user?.uid) return;
+
+        // If we are connected but not in the players list anymore, we've been booted
+        const amIStillInRoom = players && players[user.uid];
+
+        if (isConnected && !amIStillInRoom && roomStatus !== RoomStatus.Waiting) {
+            // We could trigger an exit here or show a modal
+            // For now, let's just log it. The UI might look broken if player is null.
+            // Ideally we should redirect to home.
+            // console.log("Detected removal from room.");
+            // onExit(); // Force exit? Maybe dangerous if it's just a sync lag.
+        }
+    }, [isConnected, players, user, roomStatus]);
+
+    useEffect(() => {
+        if (!roomId) return;
+
+        const roomRef = ref(db, `rooms/${roomId}`);
+
+        const unsubscribe = onValue(roomRef, (snapshot) => {
+            const data = snapshot.val();
+
+            if (data) {
+                setRemoteState(data, user?.uid);
+            } else {
+                // Room deleted or doesn't exist
+            }
+        });
+
+        return () => unsubscribe();
+    }, [roomId, user, setRemoteState]);
+
+    const {
+        selected,
+        setSelected,
+        highlightedNumber,
+        setHighlightedNumber,
+        fastFillMode,
+        setFastFillMode,
+        fastFillNumber,
+        setFastFillNumber,
+        pencilMode,
+        setPencilMode,
+        handleCellClick,
+        handleNumberClick,
+        handleBackgroundClick,
+    } = useGameLogic({
+        board,
+        initialBoard,
+        status,
+        setCellValue,
+        toggleNote,
+        mistakeCells
+    });
 
     // Reset game state on mount/unmount to prevent glitches
     useEffect(() => {
@@ -47,7 +131,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
     // Safety delay to prevent early victory trigger due to clock skew or race conditions
     useEffect(() => {
-        if (status === 'playing' && roomStatus === 'playing') {
+        if (status === GameStatus.Playing && roomStatus === RoomStatus.Playing) {
             const timer = setTimeout(() => {
                 setCanCheckVictory(true);
             }, 3000); // 3 seconds grace period
@@ -60,35 +144,38 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
     // Automatic Victory Logic: If you are the only one left 'playing'
     useEffect(() => {
-        if (!user || status !== 'playing' || roomStatus !== 'playing') return;
+        if (!user || status !== GameStatus.Playing || roomStatus !== RoomStatus.Playing) return;
 
         // Wait for safety delay
         if (!canCheckVictory) return;
 
         const otherPlayers = Object.values(players).filter(p => p.id !== user.uid);
         if (otherPlayers.length > 0) {
-            const anyoneElsePlaying = otherPlayers.some(p => p.status === 'playing');
-            if (!anyoneElsePlaying) {
+            // Only auto-win if ALL other players have explicitly LOST.
+            // If they are simply 'Idle' or disconnected (not in list), we play on.
+            const allOthersLost = otherPlayers.every(p => p.status === GameStatus.Lost);
+
+            if (allOthersLost) {
                 // You are the last one standing!
                 const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
                 const roomRef = ref(db, `rooms/${roomId}`);
-                update(playerRef, { status: "won" });
-                update(roomRef, { status: "finished" });
+                update(playerRef, { status: GameStatus.Won });
+                update(roomRef, { status: RoomStatus.Finished });
             }
         }
     }, [players, status, user, roomId, roomStatus, canCheckVictory]);
 
     // Game Over if room is finished and you didn't win
     useEffect(() => {
-        if (roomStatus === 'finished' && status === 'playing' && user) {
+        if (roomStatus === RoomStatus.Finished && status === GameStatus.Playing && user) {
             const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
-            update(playerRef, { status: "lost" });
+            update(playerRef, { status: GameStatus.Lost });
         }
     }, [roomStatus, status, user, roomId]);
 
     // Victory Confetti
     useEffect(() => {
-        if (status === 'won') {
+        if (status === GameStatus.Won) {
             // Blow up from the bottom
             const duration = 3000;
             const end = Date.now() + duration;
@@ -131,100 +218,32 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
     const [debouncedBoard] = useDebounce(board, 500);
     const [debouncedMistakes] = useDebounce(mistakes, 500);
     const [debouncedStatus] = useDebounce(status, 500);
+    const [debouncedProgress] = useDebounce(progress, 500);
 
     // Effect to update player progress & mistakes & status in Firebase
     useEffect(() => {
-        if (!user || !roomId || debouncedStatus === 'idle') return;
+        if (!user || !roomId || debouncedStatus === GameStatus.Idle) return;
 
-        const progress = countEmptyCells(debouncedBoard);
         const dbRef = ref(db);
 
         // Batch all updates into a single object
         const batchedUpdates: Record<string, any> = {
-            [`rooms/${roomId}/players/${user.uid}/progress`]: progress,
+            [`rooms/${roomId}/players/${user.uid}/progress`]: debouncedProgress,
             [`rooms/${roomId}/players/${user.uid}/mistakes`]: debouncedMistakes,
             [`rooms/${roomId}/players/${user.uid}/status`]: debouncedStatus
         };
 
-        if (progress === 0 && debouncedMistakes < 3) {
+        if (debouncedStatus === GameStatus.Won) {
             batchedUpdates[`rooms/${roomId}/players/${user.uid}/completed`] = true;
-            batchedUpdates[`rooms/${roomId}/players/${user.uid}/status`] = "won";
-            batchedUpdates[`rooms/${roomId}/status`] = "finished"; // Update room status in same call
-        } else if (debouncedMistakes >= 3) {
-            batchedUpdates[`rooms/${roomId}/players/${user.uid}/status`] = "lost";
+            batchedUpdates[`rooms/${roomId}/status`] = RoomStatus.Finished; // Update room status in same call
         }
 
         // Single atomic update instead of multiple calls
         update(dbRef, batchedUpdates);
 
-    }, [debouncedBoard, debouncedMistakes, debouncedStatus, user, roomId]);
+    }, [debouncedBoard, debouncedMistakes, debouncedStatus, debouncedProgress, user, roomId]);
 
-    const handleNumberClick = (num: number) => {
-        if (status === 'won' || status === 'lost') return;
-        setFastPencilNumber(num);
-        setHighlightedNumber(num);
 
-        if (fastPencilMode) {
-            // DON'T clear selection in fast fill mode - allows one-click filling
-        } else {
-            // Only deselect if NOT in pencil mode and NOT in fast fill
-            if (!pencilMode) {
-                setSelected(null);
-            }
-        }
-
-        if (!fastPencilMode && selected) {
-            if (pencilMode) {
-                toggleNote(selected[0], selected[1], num);
-            } else {
-                setCellValue(selected[0], selected[1], num);
-            }
-        }
-    };
-
-    const handleCellClick = (row: number, col: number) => {
-        if (status === 'won' || status === 'lost') return;
-
-        const isAlreadySelected = selected && selected[0] === row && selected[1] === col;
-        const cellValue = board[row][col];
-        const isInitialCell = initialBoard[row][col] !== null;
-
-        // Tap-to-Clear Logic: tapping a user-filled cell again clears it
-        if (isAlreadySelected && cellValue !== null && !isInitialCell) {
-            setCellValue(row, col, null);
-            return;
-        }
-
-        // One-Click Fast Fill: if fast fill is active and number selected and cell is empty, fill immediately
-        if (fastPencilMode && fastPencilNumber !== null && cellValue === null) {
-            // Fill directly WITHOUT selecting cell first (true one-click fill)
-            if (pencilMode) {
-                toggleNote(row, col, fastPencilNumber);
-            } else {
-                setCellValue(row, col, fastPencilNumber);
-            }
-            return;  // Don't select after filling
-        }
-
-        // If clicking a filled cell, highlight and sync the number to pad
-        if (cellValue !== null) {
-            setHighlightedNumber(cellValue);
-            setFastPencilNumber(cellValue); // Sync to fast fill - this will trigger pad selection
-            setSelected([row, col]);
-            return;
-        }
-
-        // Normal click on empty cell: select it
-        setSelected([row, col]);
-        setHighlightedNumber(null);
-    };
-
-    const handleClear = () => {
-        if (status === 'won' || status === 'lost') return;
-        if (selected) {
-            setCellValue(selected[0], selected[1], null);
-        }
-    };
 
     const handleStartGame = async () => {
         try {
@@ -239,17 +258,12 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         return Object.values(players).sort((a, b) => a.progress - b.progress);
     }, [players]);
 
-    const gameStarted = roomStatus !== 'waiting';
-
-    // Check if battle is still ongoing for the loser
-    const isBattleOngoing = useMemo(() => {
-        return Object.values(players).some(p => p.status === 'playing');
-    }, [players]);
+    const gameStarted = roomStatus !== RoomStatus.Waiting;
 
     const handleLeaveGame = () => {
-        if (status === 'playing' && user && roomId) {
+        if (status === GameStatus.Playing && user && roomId) {
             const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
-            update(playerRef, { status: "lost" });
+            update(playerRef, { status: GameStatus.Lost });
         }
         confetti.reset();
         onExit();
@@ -346,9 +360,9 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                             }`}>
                             <div className="flex justify-between items-start mb-2">
                                 <span className="font-black truncate max-w-[100px]">{player.name}</span>
-                                <span className={`text-[10px] font-black uppercase tracking-tighter px-2 py-0.5 rounded-full ${player.status === 'lost' ? "bg-red-500 text-white" : "bg-green-500 text-white"
+                                <span className={`text-[10px] font-black uppercase tracking-tighter px-2 py-0.5 rounded-full ${player.status === GameStatus.Lost ? "bg-red-500 text-white" : "bg-green-500 text-white"
                                     }`}>
-                                    {player.status === 'playing' ? "Battle" : player.status}
+                                    {player.status === GameStatus.Playing ? "Battle" : player.status}
                                 </span>
                             </div>
                             <div className="flex items-baseline gap-1">
@@ -363,39 +377,63 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                 </div>
             </div>
 
-            <main className="w-full flex flex-col md:flex-row gap-4 items-center md:items-start justify-center text-center" onClick={() => setSelected(null)}>
-                <div className="flex flex-col items-center flex-1 max-w-xl animate-scale-in w-full px-1" onClick={(e) => e.stopPropagation()}>
-                    {/* Mobile Toolbar */}
-                    <div className="w-full flex items-center justify-end gap-3 mb-2 px-1">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setFastPencilMode(!fastPencilMode);
-                            }}
-                            className={`p-3 rounded-xl transition-all duration-200 shadow-sm border ${fastPencilMode
-                                ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-green-200 border-transparent"
-                                : "bg-white text-gray-500 border-gray-200"
-                                }`}
-                            title={`Fast Pencil: ${fastPencilMode ? "ON" : "OFF"}`}
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                            </svg>
-                        </button>
+            <main className="w-full flex flex-col items-center justify-center transform origin-top" onClick={handleBackgroundClick}>
+                <div className="w-full max-w-xl flex items-center justify-end gap-3 mb-2 px-2">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setFastFillMode(!fastFillMode);
+                        }}
+                        className={`p-3 rounded-xl transition-all duration-200 shadow-sm border ${fastFillMode
+                            ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-green-200 dark:shadow-green-900/50 border-transparent"
+                            : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700"
+                            }`}
+                        title={`Fast Fill: ${fastFillMode ? "ON" : "OFF"}`}
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </button>
+
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setPencilMode(!pencilMode);
+                        }}
+                        className={`p-3 rounded-xl transition-all duration-200 shadow-sm border ${pencilMode
+                            ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-indigo-200 dark:shadow-indigo-900/50 border-transparent"
+                            : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700"
+                            }`}
+                        title={`Pencil Mode: ${pencilMode ? "ON" : "OFF"}`}
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div className="w-full max-w-xl animate-fade-in" onClick={e => e.stopPropagation()}>
+                    <div className="flex justify-between items-center mb-4 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                        <div className="flex items-center gap-2">
+                            <div className="flex flex-col">
+                                <span className="text-xs font-black text-gray-400 tracking-widest uppercase">Time</span>
+                                <Timer startTime={startTime} className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono tracking-tight" />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 px-4 py-2 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-xl">
+                                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                                <span className="font-bold text-red-600 dark:text-red-400 tabular-nums">Mistakes: {mistakes}/3</span>
+                            </div>
+                        </div>
 
                         <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setPencilMode(!pencilMode); // Use pencilMode state here
-                            }}
-                            className={`p-3 rounded-xl transition-all duration-200 shadow-sm border ${pencilMode
-                                ? "bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-indigo-200 border-transparent"
-                                : "bg-white text-gray-500 border-gray-200"
-                                }`}
-                            title={`Pencil Mode: ${pencilMode ? "ON" : "OFF"}`}
+                            onClick={() => setShowHelp(true)}
+                            className="w-10 h-10 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 transition-all"
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                         </button>
                     </div>
@@ -408,12 +446,19 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                         }}
                         highlightedNumber={highlightedNumber}
                         isPencilMode={pencilMode}
+                        board={board}
+                        initialBoard={initialBoard}
+                        mistakeCells={mistakeCells}
+                        notes={notes}
+                        onCellClick={setCellValue}
+                        onNoteClick={toggleNote}
+                        activeAutoFillCell={activeAutoFillCell}
                     />
                     <GameControls
                         board={board}
                         onNumberClick={handleNumberClick}
                         onReset={resetBoard}
-                        selectedNumber={fastPencilMode ? fastPencilNumber : null}
+                        selectedNumber={fastFillMode ? fastFillNumber : null}
                         onUndo={undo}
                         canUndo={history.length > 0}
                     />
@@ -421,97 +466,81 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
             </main>
 
             {/* Quit Confirmation Modal */}
-            {showQuitConfirm && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110]" onClick={() => setShowQuitConfirm(false)}>
-                    <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 dark:border-gray-700 text-center max-w-md mx-4 transform transition-all animate-pop-in" onClick={e => e.stopPropagation()}>
-                        <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-amber-500">
-                            <svg className="w-8 h-8 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                        </div>
-                        <h2 className="text-3xl font-black mb-3 text-gray-900 dark:text-gray-100">Leave Battle?</h2>
-                        <p className="mb-8 text-gray-500 dark:text-gray-400 font-bold">
-                            Leaving now will forfeit your position in this battle. Are you sure?
-                        </p>
-                        <div className="flex gap-3 justify-center">
-                            <button
-                                onClick={handleLeaveGame}
-                                className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-red-500/20"
-                            >
-                                YES, LEAVE
-                            </button>
-                            <button
-                                onClick={() => setShowQuitConfirm(false)}
-                                className="px-8 py-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-2xl font-black transition-all"
-                            >
-                                STAY
-                            </button>
-                        </div>
-                    </div>
+            <GameModal
+                isOpen={showQuitConfirm}
+                onClose={() => setShowQuitConfirm(false)}
+                title="Leave Battle?"
+                description="The game will continue without you. Are you sure you want to surrender?"
+                type="default"
+                icon={
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                }
+            >
+                <div className="flex gap-3 justify-center w-full">
+                    <button
+                        onClick={() => {
+                            setShowQuitConfirm(false);
+                            confetti.reset();
+                            onExit();
+                        }}
+                        className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-colors shadow-lg hover:shadow-xl"
+                    >
+                        Yes, Surrender
+                    </button>
+                    <button
+                        onClick={() => setShowQuitConfirm(false)}
+                        className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-xl font-bold transition-colors"
+                    >
+                        Cancel
+                    </button>
                 </div>
-            )}
+            </GameModal>
 
-            {/* Game Over Overlays */}
-            {status === 'lost' && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-md p-6 animate-fade-in">
-                    <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-[2rem] p-8 md:p-12 text-center shadow-2xl relative overflow-hidden">
-                        {/* Ambient Glow */}
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-red-500/30 rounded-full blur-3xl -z-10"></div>
+            {/* Game Over / Lost Modal */}
+            <GameModal
+                isOpen={status === GameStatus.Lost}
+                title="DEFEAT"
+                description={
+                    <>
+                        <span className="block mb-2">You have been eliminated.</span>
+                        <span className="block text-sm opacity-80">
+                            {user && players[user?.uid]?.mistakes >= 3
+                                ? "Too many mistakes!"
+                                : "Better luck next time!"}
+                        </span>
+                    </>
+                }
+                type="danger"
+                icon={
+                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                }
+            >
+                <button
+                    onClick={() => { confetti.reset(); onExit(); }}
+                    className="w-full py-4 bg-white text-gray-900 rounded-xl font-bold text-lg hover:bg-gray-100 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg"
+                >
+                    Leave Battle
+                </button>
+            </GameModal>
 
-                        <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/20 rotate-12">
-                            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </div>
-
-                        <h2 className="text-3xl md:text-4xl font-black mb-3 text-white tracking-tight">Knocked Out</h2>
-                        <p className="text-gray-300 mb-8 font-medium text-lg leading-relaxed">
-                            {isBattleOngoing
-                                ? "You've made 3 mistakes. You can still spectate the ongoing battle."
-                                : "The battle has ended. Better luck in the next round!"}
-                        </p>
-
-                        <button
-                            onClick={() => { confetti.reset(); onExit(); }}
-                            className="w-full py-4 bg-white text-gray-900 rounded-xl font-bold text-lg hover:bg-gray-100 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg"
-                        >
-                            Leave Battle
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {status === 'won' && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-md p-6 animate-fade-in">
-                    <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-[2rem] p-8 md:p-12 text-center shadow-2xl relative overflow-hidden">
-                        {/* Ambient Glow */}
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-yellow-500/30 rounded-full blur-3xl -z-10"></div>
-
-                        <div className="w-24 h-24 mx-auto mb-6 relative">
-                            <div className="absolute inset-0 bg-yellow-400 rounded-full blur-xl opacity-40 animate-pulse"></div>
-                            <div className="relative w-full h-full bg-gradient-to-br from-yellow-400 to-amber-500 rounded-2xl flex items-center justify-center shadow-lg shadow-yellow-500/30 rotate-[-10deg]">
-                                <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                </svg>
-                            </div>
-                        </div>
-
-                        <h2 className="text-4xl md:text-5xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-100 to-yellow-300 tracking-tight drop-shadow-sm">
-                            VICTORY
-                        </h2>
-                        <p className="text-yellow-100/90 mb-8 font-medium text-lg tracking-wide uppercase text-[10px] md:text-sm">
-                            First Place • Undisputed Champion
-                        </p>
-
-                        <button
-                            onClick={() => { confetti.reset(); onExit(); }}
-                            className="w-full py-4 bg-gradient-to-r from-yellow-400 to-amber-500 text-white rounded-xl font-black text-xl hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-orange-500/20"
-                        >
-                            CLAIM VICTORY
-                        </button>
-                    </div>
-                </div>
-            )}
+            {/* Victory Modal */}
+            <GameModal
+                isOpen={status === GameStatus.Won}
+                type="won"
+                time={gameDuration}
+                difficulty={difficulty}
+            >
+                <button
+                    onClick={() => { confetti.reset(); onExit(); }}
+                    className="w-full py-4 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-colors backdrop-blur-sm border border-white/30 shadow-lg"
+                >
+                    Claim Victory
+                </button>
+            </GameModal>
         </div>
     );
 }

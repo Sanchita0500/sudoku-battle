@@ -6,98 +6,72 @@ import confetti from 'canvas-confetti';
 
 import Board from "./Board";
 import GameControls from "./GameControls";
-import { useGameStore } from "@/hooks/useGameStore";
+import { useSinglePlayerStore } from "@/hooks/useSinglePlayerStore";
+import { useGameLogic } from "@/hooks/useGameLogic";
 import Timer from "./Timer";
+import { GameStatus } from "@/lib/types";
 
 import HelpModal from "./HelpModal";
+import GameModal from "./GameModal";
 
 interface SinglePlayerGameProps {
     difficulty: 'easy' | 'medium' | 'hard';
     onExit: () => void;
 }
 
+import { useAutoFill } from "@/hooks/useAutoFill";
+
 export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGameProps) {
-    const { board, initialBoard, startGame, setCellValue, resetBoard, status, mistakes, toggleNote, history, undo } = useGameStore();
-    const [selected, setSelected] = useState<[number, number] | null>(null);
-    const [highlightedNumber, setHighlightedNumber] = useState<number | null>(null);
-    const [fastFillMode, setFastFillMode] = useState(false);
-    const [fastFillNumber, setFastFillNumber] = useState<number | null>(null);
-    const [pencilMode, setPencilMode] = useState(false);
-    const [startTime, setStartTime] = useState<number | null>(null);
+    const { board, initialBoard, setCellValue, status, mistakes, startTime, endTime, undo, history, resetGame, toggleNote, resetBoard, mistakeCells, notes, startGame, progress, solution } = useSinglePlayerStore();
+
+    // Auto-fill Magic Hook
+    const { activeAutoFillCell } = useAutoFill({
+        progress,
+        board,
+        solution,
+        setCellValue,
+        status,
+        mistakeCells,
+        difficulty
+    });
+
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
 
+    const {
+        selected,
+        setSelected,
+        highlightedNumber,
+        setHighlightedNumber,
+        fastFillMode,
+        setFastFillMode,
+        fastFillNumber,
+        setFastFillNumber,
+        pencilMode,
+        setPencilMode,
+        handleCellClick,
+        handleNumberClick,
+        handleBackgroundClick,
+        resetSelection
+    } = useGameLogic({
+        board,
+        initialBoard,
+        status,
+        setCellValue,
+        toggleNote,
+        mistakeCells
+    });
+
+    // Reset game state on mount/unmount to prevent glitches
     useEffect(() => {
-        // Always start a fresh game when component mounts
-        startGame(difficulty);
-        setStartTime(Date.now());
-    }, [difficulty]); // Only depend on difficulty
+        resetGame();
+        // Start game logic
+        useSinglePlayerStore.getState().startGame(difficulty); // Using direct access to avoid dependency cycle if we put it in useEffect deps
+        return () => resetGame();
+    }, [difficulty]); // Restart if difficulty changes
 
-    const handleNumberClick = (num: number) => {
-        // Always remember the selected number for fast fill mode
-        setFastFillNumber(num);
-        if (fastFillMode) {
-            setHighlightedNumber(num);
-            // DON'T clear selection in fast fill mode - this allows one-click filling
-            // The cell click handler will do the filling directly
-        } else {
-            // Only clear selection when NOT in fast fill mode
-            if (!pencilMode) {
-                setSelected(null);
-            }
-        }
-
-        if (!fastFillMode) {
-            if (selected) {
-                if (pencilMode) {
-                    toggleNote(selected[0], selected[1], num);
-                } else {
-                    setCellValue(selected[0], selected[1], num);
-                }
-            }
-        }
-    };
-
-    const handleCellClick = (row: number, col: number) => {
-        const isAlreadySelected = selected && selected[0] === row && selected[1] === col;
-        const cellValue = board[row][col];
-        const isInitialCell = initialBoard[row][col] !== null;
-
-        // Tap-to-Clear Logic: tapping a user-filled cell again clears it
-        if (isAlreadySelected && cellValue !== null && !isInitialCell) {
-            setCellValue(row, col, null);
-            return;
-        }
-
-        // One-Click Fast Fill: if fast fill is active and number selected and cell is empty, fill immediately
-        if (fastFillMode && fastFillNumber !== null && cellValue === null) {
-            // Fill directly WITHOUT selecting cell first (true one-click fill)
-            if (pencilMode) {
-                toggleNote(row, col, fastFillNumber);
-            } else {
-                setCellValue(row, col, fastFillNumber);
-            }
-            return; // Don't select after filling
-        }
-
-        // If clicking a filled cell, highlight and sync the number to pad
-        if (cellValue !== null) {
-            setHighlightedNumber(cellValue);
-            setFastFillNumber(cellValue); // Sync to fast fill - this will trigger pad selection
-            setSelected([row, col]);
-            return;
-        }
-
-        // Normal click on empty cell: select it
-        setSelected([row, col]);
-        setHighlightedNumber(null);
-    };
-
-    const handleClear = () => {
-        if (selected) {
-            setCellValue(selected[0], selected[1], null);
-        }
-    };
+    // Calculate duration for victory modal
+    const gameDuration = startTime && endTime ? Math.floor((endTime - startTime) / 1000) : 0;
 
     const handleQuit = () => {
         setShowQuitConfirm(true);
@@ -114,39 +88,28 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
     };
 
     const handleTryAgain = () => {
-        // Reset the same board instead of generating a new one
         resetBoard();
-        setStartTime(Date.now());
-        setSelected(null);
-        setHighlightedNumber(null);
-        setFastFillNumber(null);
+        resetSelection();
     };
 
     const handlePlayAgain = () => {
-        // Generate a new puzzle
-        startGame(difficulty);
-        setStartTime(Date.now());
-        setSelected(null);
-        setHighlightedNumber(null);
-        setFastFillNumber(null);
-    };
-
-    const handleBackgroundClick = () => {
-        // Deselect cell when clicking outside the board/controls
-        setSelected(null);
+        if (difficulty) {
+            startGame(difficulty);
+        }
+        resetSelection();
     };
 
     return (
         <div
-            className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 p-4 md:p-6 font-sans text-gray-900 dark:text-gray-100"
+            className="flex flex-col items-center justify-center min-h-dvh bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 p-2 md:p-6 font-sans text-gray-900 dark:text-gray-100"
             onClick={handleBackgroundClick}
         >
             {/* Header Section */}
-            <div className="w-full max-w-lg mb-4 md:mb-6">
+            <div className="w-full max-w-lg mb-2 md:mb-6">
                 <div className="flex items-center justify-between mb-4">
                     <button
-                        onClick={handleQuit}
-                        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-750 font-semibold text-xs md:text-sm shadow-sm transition-all duration-200 hover:shadow-md"
+                        onClick={() => setShowQuitConfirm(true)}
+                        className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-750 font-semibold text-xs md:text-sm shadow-sm transition-all duration-200 hover:shadow-md"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -154,7 +117,7 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
                         Home
                     </button>
 
-                    <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">
+                    <h1 className="text-xl md:text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">
                         Sudoku Battle
                     </h1>
 
@@ -166,22 +129,33 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
                     </div>
                 </div>
 
-                {/* Stats Bar */}
-                <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700">
-                    <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <Timer startTime={startTime} className="text-xl font-mono font-bold text-gray-800 dark:text-gray-200" />
+                {/* Game Information Bar */}
+                <div className="flex items-center justify-between bg-white dark:bg-gray-900 p-2 px-4 md:p-4 md:px-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+                    <div className="flex flex-col">
+                        <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider">Mistakes</span>
+                        <span className={`text-lg md:text-xl font-black ${mistakes >= 2 ? 'text-red-500' : 'text-gray-800 dark:text-gray-100'}`}>{mistakes}/3</span>
                     </div>
 
+                    <div className="flex flex-col items-center">
+                        <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider mb-0.5 md:mb-1">Time</span>
+                        <Timer startTime={startTime} className="text-xl md:text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono tracking-tight" />
+                    </div>
+
+                    <div className="flex flex-col items-end">
+                        <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider">Difficulty</span>
+                        <span className="text-lg md:text-xl font-black text-gray-800 dark:text-gray-100 capitalize">{difficulty}</span>
+                    </div>
+                </div>
+
+                <div className="flex justify-end mb-2 md:mb-4">
                     <button
                         onClick={() => setShowHelp(true)}
-                        className="w-8 h-8 flex items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                        className="flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors"
                     >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
+                        How to Play
                     </button>
                 </div>
             </div>
@@ -224,18 +198,24 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
                     </button>
                 </div>
 
-                <Board
-                    selected={selected}
-                    onSelect={(coords) => {
-                        if (coords) {
-                            handleCellClick(coords[0], coords[1]);
-                        } else {
-                            setSelected(null);
-                        }
-                    }}
-                    highlightedNumber={highlightedNumber}
-                    isPencilMode={pencilMode}
-                />
+                <div className="w-full max-w-[360px] md:max-w-full mx-auto">
+                    <Board
+                        selected={selected}
+                        onSelect={(coords) => {
+                            if (coords) handleCellClick(coords[0], coords[1]);
+                            else setSelected(null);
+                        }}
+                        highlightedNumber={highlightedNumber}
+                        isPencilMode={pencilMode}
+                        board={board}
+                        initialBoard={initialBoard}
+                        mistakeCells={mistakeCells}
+                        notes={notes}
+                        onCellClick={setCellValue}
+                        onNoteClick={toggleNote}
+                        activeAutoFillCell={activeAutoFillCell}
+                    />
+                </div>
                 <GameControls
                     board={board}
                     onNumberClick={handleNumberClick}
@@ -247,123 +227,86 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
             </main>
 
             {/* Quit Confirmation Modal */}
-            {showQuitConfirm && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
-                    <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 text-center max-w-md mx-4 transform transition-all">
-                        <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg className="w-8 h-8 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                        </div>
-                        <h2 className="text-2xl font-bold mb-3 text-gray-900 dark:text-gray-100">Quit Game?</h2>
-                        <p className="mb-6 text-gray-600 dark:text-gray-400">
-                            Your progress will be lost. Are you sure?
-                        </p>
-                        <div className="flex gap-3 justify-center">
-                            <button
-                                onClick={confirmQuit}
-                                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-colors shadow-lg hover:shadow-xl"
-                            >
-                                Yes, Quit
-                            </button>
-                            <button
-                                onClick={cancelQuit}
-                                className="px-6 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-xl font-semibold transition-colors"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
+            <GameModal
+                isOpen={showQuitConfirm}
+                onClose={cancelQuit}
+                title="Quit Game?"
+                description="Your progress will be lost. Are you sure?"
+                type="default"
+                icon={
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                }
+            >
+                <div className="flex gap-3 justify-center w-full">
+                    <button
+                        onClick={confirmQuit}
+                        className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-colors shadow-lg hover:shadow-xl"
+                    >
+                        Yes, Quit
+                    </button>
+                    <button
+                        onClick={cancelQuit}
+                        className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-xl font-bold transition-colors"
+                    >
+                        Cancel
+                    </button>
                 </div>
-            )}
+            </GameModal>
 
 
             {/* Win Modal */}
-            {status === 'won' && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-md p-6 animate-fade-in">
-                    <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-[2rem] p-8 md:p-12 text-center shadow-2xl relative overflow-hidden"
-                        ref={() => {
-                            // Trigger confetti on mount
-                            confetti({
-                                particleCount: 150,
-                                spread: 100,
-                                origin: { y: 0.8 },
-                                zIndex: 200
-                            });
-                        }}
+            {/* Win Modal */}
+            <GameModal
+                isOpen={status === GameStatus.Won}
+                type="won"
+                time={gameDuration}
+                difficulty={difficulty}
+            >
+                <div className="flex gap-3 justify-center w-full">
+                    <button
+                        onClick={onExit}
+                        className="flex-1 px-4 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-colors backdrop-blur-sm"
                     >
-                        {/* Ambient Glow */}
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-green-500/30 rounded-full blur-3xl -z-10"></div>
-
-                        <div className="w-24 h-24 mx-auto mb-6 relative">
-                            <div className="absolute inset-0 bg-green-400 rounded-full blur-xl opacity-40 animate-pulse"></div>
-                            <div className="relative w-full h-full bg-gradient-to-br from-green-400 to-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/30 rotate-[-5deg]">
-                                <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                        </div>
-
-                        <h2 className="text-4xl md:text-5xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-green-300 via-emerald-100 to-green-300 tracking-tight drop-shadow-sm">
-                            SOLVED!
-                        </h2>
-                        <p className="text-green-100/90 mb-8 font-medium text-lg tracking-wide uppercase text-[10px] md:text-sm">
-                            Difficulty: {difficulty} • Outstanding
-                        </p>
-
-                        <div className="flex gap-3 justify-center">
-                            <button
-                                onClick={handlePlayAgain}
-                                className="px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex-1"
-                            >
-                                Play Again
-                            </button>
-                            <button
-                                onClick={onExit}
-                                className="px-6 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-colors flex-1"
-                            >
-                                Home
-                            </button>
-                        </div>
-                    </div>
+                        Claim Victory
+                    </button>
+                    <button
+                        onClick={handlePlayAgain}
+                        className="flex-1 px-4 py-3 bg-white text-yellow-600 hover:bg-yellow-50 rounded-xl font-bold transition-colors shadow-lg"
+                    >
+                        Play Again
+                    </button>
                 </div>
-            )}
+            </GameModal>
 
             {/* Game Over Modal */}
-            {status === 'lost' && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-md p-6 animate-fade-in">
-                    <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 rounded-[2rem] p-8 md:p-12 text-center shadow-2xl relative overflow-hidden">
-                        {/* Ambient Glow */}
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-red-500/30 rounded-full blur-3xl -z-10"></div>
-
-                        <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/20 rotate-12">
-                            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </div>
-
-                        <h2 className="text-3xl md:text-4xl font-black mb-3 text-white tracking-tight">Game Over</h2>
-                        <p className="text-gray-300 mb-8 font-medium text-lg leading-relaxed">
-                            You made 3 mistakes. Don't give up!
-                        </p>
-
-                        <div className="flex gap-3 justify-center">
-                            <button
-                                onClick={handleTryAgain}
-                                className="px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex-1"
-                            >
-                                Try Again
-                            </button>
-                            <button
-                                onClick={onExit}
-                                className="px-6 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-colors flex-1"
-                            >
-                                Home
-                            </button>
-                        </div>
-                    </div>
+            <GameModal
+                isOpen={status === GameStatus.Lost}
+                title="Game Over"
+                description="You made 3 mistakes. Don't give up!"
+                type="danger"
+                icon={
+                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                }
+            >
+                <div className="flex gap-3 justify-center w-full">
+                    <button
+                        onClick={handleTryAgain}
+                        className="flex-1 px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-xl hover:scale-105 active:scale-95"
+                    >
+                        Try Again
+                    </button>
+                    <button
+                        onClick={onExit}
+                        className="flex-1 px-6 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-colors"
+                    >
+                        Home
+                    </button>
                 </div>
-            )}
+            </GameModal>
         </div>
     );
 }

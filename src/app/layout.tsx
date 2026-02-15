@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -14,10 +14,27 @@ const geistMono = Geist_Mono({
 
 import { AuthProvider } from "@/context/AuthContext";
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: "#4f46e5",
+};
+
 export const metadata: Metadata = {
   title: "Sudoku Battle",
   description: "Real-time competitive Sudoku",
-  colorScheme: "light", // Force light mode, prevent dark mode interference
+  colorScheme: "light",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Sudoku Battle",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export default function RootLayout({

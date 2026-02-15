@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { useGameStore } from "@/hooks/useGameStore";
+
 import Cell from "./Cell";
 
 interface BoardProps {
@@ -9,10 +9,30 @@ interface BoardProps {
     onSelect: (coords: [number, number] | null) => void;
     highlightedNumber?: number | null;
     isPencilMode?: boolean;
+    board: (number | null)[][];
+    initialBoard: (number | null)[][];
+    mistakeCells: Set<string>;
+    notes: number[][][];
+    onCellClick: (row: number, col: number, value: number | null) => void;
+    onNoteClick: (row: number, col: number, num: number) => void;
+    onClear?: () => void;
+    activeAutoFillCell?: { r: number, c: number } | null;
 }
 
-export default function Board({ selected, onSelect, highlightedNumber, isPencilMode = false }: BoardProps) {
-    const { board, initialBoard, setCellValue, notes, toggleNote, mistakeCells } = useGameStore();
+export default function Board({
+    selected,
+    onSelect,
+    highlightedNumber,
+    isPencilMode = false,
+    board,
+    initialBoard,
+    mistakeCells,
+    notes,
+    onCellClick,
+    onNoteClick,
+    onClear,
+    activeAutoFillCell
+}: BoardProps) {
 
     // Memoize the value of the selected cell for highlighting
     const selectedValue = useMemo(() =>
@@ -46,18 +66,21 @@ export default function Board({ selected, onSelect, highlightedNumber, isPencilM
             if (e.key >= "1" && e.key <= "9") {
                 const num = parseInt(e.key);
                 if (isPencilMode) {
-                    toggleNote(r, c, num);
+                    onNoteClick(r, c, num);
                 } else {
-                    setCellValue(r, c, num);
+                    onCellClick(r, c, num);
                 }
             } else if (e.key === "Backspace" || e.key === "Delete") {
-                setCellValue(r, c, null);
+                onCellClick(r, c, null);
             }
         };
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [selected, setCellValue, onSelect, isPencilMode, toggleNote]);
+    }, [selected, onCellClick, onSelect, isPencilMode, onNoteClick]);
+
+    // Stable callback for cell selection
+    const handleCellSelect = (r: number, c: number) => onSelect([r, c]);
 
     return (
         <div className="grid grid-cols-9 border-4 border-gray-800 bg-white w-full max-w-xl aspect-square mx-auto shadow-2xl rounded-xl overflow-hidden select-none">
@@ -72,7 +95,7 @@ export default function Board({ selected, onSelect, highlightedNumber, isPencilM
                         isSelected={selected?.[0] === r && selected?.[1] === c}
                         isHighlighted={numberToHighlight !== null && val === numberToHighlight && !(selected?.[0] === r && selected?.[1] === c)}
                         hasMistake={mistakeCells.has(`${r},${c}`)}
-                        onClick={() => onSelect([r, c])}
+                        onSelect={handleCellSelect}
                         notes={notes[r][c]}
                     />
                 ))

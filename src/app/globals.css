@@ -19,6 +19,40 @@ html {
   --font-mono: var(--font-geist-mono);
 }
 
+@theme {
+  --font-geist-sans: var(--font-geist-sans);
+  --font-geist-mono: var(--font-geist-mono);
+
+  --animate-pop-in: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  --animate-magic-in: magic-in 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+
+  @keyframes pop-in {
+    0% {
+      transform: scale(0.5);
+      opacity: 0;
+    }
+
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes magic-in {
+    0% {
+      transform: scale(1.5);
+      opacity: 0;
+      filter: brightness(2);
+    }
+
+    100% {
+      transform: scale(1);
+      opacity: 1;
+      filter: brightness(1);
+    }
+  }
+}
+
 /* Force light mode body */
 body {
   background: var(--background);

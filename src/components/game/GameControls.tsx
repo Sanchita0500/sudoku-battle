@@ -31,8 +31,8 @@ export default function GameControls({ onNumberClick, onReset, onUndo, canUndo, 
     };
 
     return (
-        <div className="flex flex-col gap-2 md:gap-3 mt-4 md:mt-8 max-w-xl mx-auto w-full px-2 md:px-0">
-            <div className="grid grid-cols-5 gap-2 md:gap-3">
+        <div className="flex flex-col gap-1.5 md:gap-3 mt-1 md:mt-8 max-w-xl mx-auto w-full px-2 md:px-0">
+            <div className="grid grid-cols-5 gap-1.5 md:gap-3">
                 {[1, 2, 3, 4, 5].map((num) => {
                     const isComplete = isNumberComplete(num);
                     const isSelected = selectedNumber === num;
@@ -42,7 +42,7 @@ export default function GameControls({ onNumberClick, onReset, onUndo, canUndo, 
                             key={num}
                             onClick={() => !isComplete && onNumberClick(num)}
                             disabled={isComplete}
-                            className={`relative h-12 md:h-14 text-lg font-bold rounded-xl shadow-md transition-all duration-200 ${isComplete
+                            className={`relative h-11 md:h-14 text-lg font-bold rounded-xl shadow-md transition-all duration-200 ${isComplete
                                 ? "bg-gray-200 text-gray-400 cursor-not-allowed opacity-50"
                                 : isSelected
                                     ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shadow-green-300 scale-105 ring-2 ring-green-400"
@@ -59,7 +59,7 @@ export default function GameControls({ onNumberClick, onReset, onUndo, canUndo, 
                     );
                 })}
             </div>
-            <div className="grid grid-cols-5 gap-2 md:gap-3">
+            <div className="grid grid-cols-5 gap-1.5 md:gap-3">
                 {[6, 7, 8, 9].map((num) => {
                     const isComplete = isNumberComplete(num);
                     const isSelected = selectedNumber === num;

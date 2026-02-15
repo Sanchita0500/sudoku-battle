@@ -1,9 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import SinglePlayerGame from "@/components/game/SinglePlayerGame";
-import MultiplayerGame from "@/components/game/MultiplayerGame";
+import dynamic from "next/dynamic";
 import Lobby from "@/components/game/Lobby";
+
+const SinglePlayerGame = dynamic(() => import("@/components/game/SinglePlayerGame"), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center min-h-screen text-indigo-600 font-bold animate-pulse">Loading Game...</div>
+});
+
+const MultiplayerGame = dynamic(() => import("@/components/game/MultiplayerGame"), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center min-h-screen text-indigo-600 font-bold animate-pulse">Loading Battle Arena...</div>
+});
 
 import { useAuth } from "@/context/AuthContext";
 
@@ -120,7 +129,7 @@ export default function Home() {
         </header>
       )}
 
-      <div className="flex-grow flex flex-col items-center justify-center -mt-10">
+      <div className="flex-grow flex flex-col items-center justify-center md:-mt-10">
         <h1 className="text-5xl md:text-7xl font-extrabold mb-12 bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent tracking-tighter text-center">
           SUDOKU BATTLE
         </h1>

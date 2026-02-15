@@ -20,30 +20,57 @@ export default function HelpModal({ onClose }: { onClose: () => void }) {
                     </div>
 
                     <div className="space-y-6">
+                        {/* FAST FILL - Highlight Feature */}
                         <div className="flex gap-4">
-                            <div className="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center text-white shadow-lg shadow-green-500/20">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                </svg>
+                            <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+                                <span className="text-2xl">⚡</span>
                             </div>
                             <div>
-                                <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">Fast Fill Mode</h4>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                                    Select a number from the bottom pad first. Then, tap any cell on the board to fill it with that number instantly. Great for speed!
+                                <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                    Fast Fill Mode
+                                    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] rounded-full uppercase tracking-wide">Pro Tip</span>
+                                </h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                    Select a number first, then tap any empty cell to fill it instantly! Great for speed.
                                 </p>
                             </div>
                         </div>
 
+                        {/* PENCIL MODE */}
                         <div className="flex gap-4">
-                            <div className="shrink-0 w-10 h-10 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                </svg>
+                            <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0">
+                                <span className="text-2xl">✏️</span>
                             </div>
                             <div>
-                                <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">Pencil Mode (Notes)</h4>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                                    Toggle this ON to make small notes in cells instead of filling them. Use it to track possible candidates without committing to a number.
+                                <h3 className="font-bold text-gray-900 dark:text-gray-100">Pencil Mode</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                    Add small notes to track possibilities. Notes are automatically removed when you fill the cell.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* MISTAKES LIMIT */}
+                        <div className="flex gap-4">
+                            <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+                                <span className="text-2xl">❤️</span>
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-900 dark:text-gray-100">Mistakes & Lives</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                    You have <strong>3 lives</strong>. Entering a wrong number costs a life and turns the cell <span className="text-red-500 font-bold">red</span>. Game over if you lose all 3!
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* NUMBER COUNTS */}
+                        <div className="flex gap-4">
+                            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
+                                <span className="text-2xl">🔢</span>
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-900 dark:text-gray-100">Number Tracker</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                    The small numbers on the keypad show <strong>how many of that digit are left</strong> to place. When a number acts as 0, it grays out.
                                 </p>
                             </div>
                         </div>
