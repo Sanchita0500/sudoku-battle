@@ -20,21 +20,24 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: "#4f46e5",
+  interactiveWidget: "resizes-content",
 };
 
 export const metadata: Metadata = {
   title: "Sudoku Battle",
   description: "Real-time competitive Sudoku",
-  colorScheme: "light",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "Sudoku Battle",
   },
   formatDetection: {
     telephone: false,
   },
+  other: {
+    "mobile-web-app-capable": "yes",
+  }
 };
 
 export default function RootLayout({
