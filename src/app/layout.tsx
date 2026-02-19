@@ -40,6 +40,8 @@ export const metadata: Metadata = {
   }
 };
 
+import SplashScreen from "@/components/ui/SplashScreen";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -49,7 +51,9 @@ export default function RootLayout({
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        suppressHydrationWarning
       >
+        <SplashScreen />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

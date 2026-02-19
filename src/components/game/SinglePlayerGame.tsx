@@ -16,12 +16,13 @@ import GameModal from "./GameModal";
 
 interface SinglePlayerGameProps {
     difficulty: 'easy' | 'medium' | 'hard';
+    date?: string; // If present, it's a daily challenge
     onExit: () => void;
 }
 
 import { useAutoFill } from "@/hooks/useAutoFill";
 
-export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGameProps) {
+export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePlayerGameProps) {
     const { board, initialBoard, setCellValue, status, mistakes, startTime, endTime, undo, history, resetGame, toggleNote, resetBoard, mistakeCells, notes, startGame, progress, solution } = useSinglePlayerStore();
 
     // Auto-fill Magic Hook
@@ -62,13 +63,33 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
         mistakeCells
     });
 
+    // Hydration check to prevent race conditions with persist
+    const [isHydrated, setIsHydrated] = useState(false);
+
+    useEffect(() => {
+        // Check if already hydrated
+        if (useSinglePlayerStore.persist.hasHydrated()) {
+            setIsHydrated(true);
+        } else {
+            // Wait for hydration
+            const unsub = useSinglePlayerStore.persist.onFinishHydration(() => setIsHydrated(true));
+            return () => {
+                // Clean up listener if component unmounts before hydration (rare)
+                // onFinishHydration returns a cleanup function in recent versions?
+                // If not, it's fine, it's a one-time event usually.
+            };
+        }
+    }, []);
+
     // Reset game state on mount/unmount to prevent glitches
     useEffect(() => {
+        if (!isHydrated) return;
+
         resetGame();
         // Start game logic
-        useSinglePlayerStore.getState().startGame(difficulty); // Using direct access to avoid dependency cycle if we put it in useEffect deps
+        useSinglePlayerStore.getState().startGame(difficulty, date);
         return () => resetGame();
-    }, [difficulty]); // Restart if difficulty changes
+    }, [difficulty, date, isHydrated]); // Restart if difficulty changes or hydration finishes
 
     // Calculate duration for victory modal
     const gameDuration = startTime && endTime ? Math.floor((endTime - startTime) / 1000) : 0;
@@ -94,14 +115,26 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
 
     const handlePlayAgain = () => {
         if (difficulty) {
-            startGame(difficulty);
+            startGame(difficulty, date);
         }
         resetSelection();
     };
 
+    // Save Daily Completion
+    useEffect(() => {
+        if (status === GameStatus.Won && date) {
+            const saved = localStorage.getItem("daily_completed");
+            const completed = saved ? JSON.parse(saved) : [];
+            if (!completed.includes(date)) {
+                completed.push(date);
+                localStorage.setItem("daily_completed", JSON.stringify(completed));
+            }
+        }
+    }, [status, date]);
+
     return (
         <div
-            className="flex flex-col items-center justify-center min-h-dvh bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 p-2 md:p-6 font-sans text-gray-900 dark:text-gray-100"
+            className="flex flex-col items-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 p-2 md:p-8 font-sans text-gray-900 dark:text-gray-100 overflow-x-hidden"
             onClick={handleBackgroundClick}
         >
             {/* Header Section */}
@@ -143,7 +176,9 @@ export default function SinglePlayerGame({ difficulty, onExit }: SinglePlayerGam
 
                     <div className="flex flex-col items-end">
                         <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase tracking-wider">Difficulty</span>
-                        <span className="text-lg md:text-xl font-black text-gray-800 dark:text-gray-100 capitalize">{difficulty}</span>
+                        <span className="text-lg md:text-xl font-black text-gray-800 dark:text-gray-100 capitalize">
+                            {date ? "Daily" : difficulty}
+                        </span>
                     </div>
                 </div>
 

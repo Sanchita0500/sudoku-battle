@@ -83,7 +83,7 @@ export default function Board({
     const handleCellSelect = (r: number, c: number) => onSelect([r, c]);
 
     return (
-        <div className="grid grid-cols-9 border-4 border-gray-800 bg-white w-full max-w-xl aspect-square mx-auto shadow-2xl rounded-xl overflow-hidden select-none">
+        <div className="grid grid-cols-9 border-2 md:border-4 border-gray-800 bg-white w-full max-w-xl aspect-square mx-auto shadow-2xl rounded-xl overflow-hidden select-none">
             {board.map((row, r) =>
                 row.map((val, c) => (
                     <Cell

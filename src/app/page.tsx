@@ -3,6 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import Lobby from "@/components/game/Lobby";
+import DailyChallengeMenu from "@/components/game/DailyChallengeMenu";
 
 const SinglePlayerGame = dynamic(() => import("@/components/game/SinglePlayerGame"), {
   ssr: false,
@@ -20,8 +21,9 @@ type GameDifficulty = 'easy' | 'medium' | 'hard';
 
 export default function Home() {
   const { user, signOut } = useAuth();
-  const [mode, setMode] = useState<'menu' | 'difficulty-select' | 'single' | 'multi'>('menu');
+  const [mode, setMode] = useState<'menu' | 'difficulty-select' | 'single' | 'multi' | 'daily'>('menu');
   const [difficulty, setDifficulty] = useState<GameDifficulty>('easy');
+  const [dailyDate, setDailyDate] = useState<string | undefined>(undefined);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -32,7 +34,14 @@ export default function Home() {
 
   const handleExitGame = () => {
     setRoomId(null);
+    setDailyDate(undefined);
     setMode('menu');
+  };
+
+  const handleStartDaily = (dateStr: string, diff: GameDifficulty) => {
+    setDailyDate(dateStr);
+    setDifficulty(diff);
+    setMode('single');
   };
 
   const handleDifficultySelect = (diff: GameDifficulty) => {
@@ -71,7 +80,12 @@ export default function Home() {
 
   // Single Player Game
   if (mode === 'single') {
-    return <SinglePlayerGame difficulty={difficulty} onExit={handleExitGame} />;
+    return <SinglePlayerGame difficulty={difficulty} date={dailyDate} onExit={handleExitGame} />;
+  }
+
+  // Daily Challenge Menu
+  if (mode === 'daily') {
+    return <DailyChallengeMenu onStartDaily={handleStartDaily} onBack={() => setMode('menu')} />;
   }
 
   // Multiplayer Game
@@ -145,6 +159,19 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
               Practice Solo
+            </span>
+          </button>
+
+          {/* Daily Challenge Entry */}
+          <button
+            onClick={() => setMode('daily')}
+            className="w-full py-5 text-2xl font-black bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 rounded-3xl shadow-xl hover:border-purple-500 hover:shadow-purple-500/10 hover:scale-[1.02] active:scale-[0.98] transition-all text-gray-800 dark:text-gray-100 group"
+          >
+            <span className="flex items-center justify-center gap-3">
+              <svg className="w-6 h-6 text-purple-500 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Daily Challenge
             </span>
           </button>
 

@@ -321,7 +321,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
     }
 
     return (
-        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 p-4 md:p-8 font-sans text-gray-900 dark:text-gray-100 overflow-x-hidden">
+        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 p-2 md:p-8 font-sans text-gray-900 dark:text-gray-100 overflow-x-hidden">
             {/* Battle Status Header */}
             <div className="w-full max-w-6xl mb-8 space-y-6">
                 <div className="flex flex-wrap gap-4 items-center justify-between">

@@ -1,5 +1,6 @@
 import { StateCreator } from 'zustand';
 import { generatePuzzle, validateMove } from '@/lib/sudoku';
+import { generateSeededPuzzle } from '@/lib/seededSudoku';
 import { GameDifficulty, GameStatus } from '@/lib/types';
 import { enableMapSet } from 'immer';
 
@@ -19,7 +20,7 @@ export interface GameSlice {
     startTime: number | null;
     endTime: number | null;
 
-    startGame: (difficulty: GameDifficulty) => void;
+    startGame: (difficulty: GameDifficulty, dateStr?: string) => void;
     setCellValue: (row: number, col: number, value: number | null) => void;
     toggleNote: (row: number, col: number, num: number) => void;
     undo: () => void;
@@ -66,25 +67,47 @@ export const createGameSlice: StateCreator<GameSlice, [["zustand/immer", never]]
     startTime: null,
     endTime: null,
 
-    startGame: (difficulty) => {
-        const { puzzle, solution } = generatePuzzle(difficulty);
-        const parsedBoard = parseBoard(puzzle);
-        const initialProgress = countEmpty(parsedBoard);
+    startGame: (difficulty, dateStr) => {
+        try {
+            let puzzleData;
 
-        set({
-            board: parsedBoard,
-            initialBoard: structuredClone(parsedBoard),
-            solution,
-            difficulty,
-            status: GameStatus.Playing,
-            mistakes: 0,
-            mistakeCells: new Set<string>(),
-            history: [],
-            notes: Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])),
-            progress: initialProgress,
-            startTime: Date.now(),
-            endTime: null,
-        });
+            // Generate Puzzle
+            if (dateStr) {
+                // Determine difficulty for Daily Challenge based on day of week?
+                // Or just use the passed difficulty (which might be default 'easy' from state if not passed explicitly)
+                // In SinglePlayerGame, we pass 'difficulty' state.
+                // For Daily, we probably want fixed difficulty per day?
+                // But for now, let's respect the passed difficulty or force Medium.
+                // The DailyChallengeMenu passes a difficulty.
+                puzzleData = generateSeededPuzzle(dateStr, difficulty);
+            } else {
+                puzzleData = generatePuzzle(difficulty);
+            }
+
+            const { puzzle, solution, difficulty: finalDifficulty } = puzzleData;
+            const parsedBoard = parseBoard(puzzle);
+
+            // Calculate initial progress (empty cells)
+            const initialProgress = countEmpty(parsedBoard);
+
+            set({
+                board: parsedBoard,
+                initialBoard: structuredClone(parsedBoard),
+                solution,
+                difficulty: finalDifficulty,
+                status: GameStatus.Playing,
+                mistakes: 0,
+                mistakeCells: new Set<string>(),
+                history: [],
+                notes: Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])),
+                progress: initialProgress,
+                startTime: Date.now(), // This sets the start time!
+                endTime: null,
+            });
+        } catch (error) {
+            console.error("[GameSlice] startGame Failed:", error);
+            // Optionally set status to Error or similar, but for now just logging.
+        }
     },
 
     setCellValue: (row, col, value) => {
@@ -263,6 +286,9 @@ export const createGameSlice: StateCreator<GameSlice, [["zustand/immer", never]]
             initialBoard: Array(9).fill(null).map(() => Array(9).fill(null)),
             solution: '',
             startTime: null,
+            endTime: null,
+            mistakes: 0,
+            mistakeCells: new Set(),
             history: [],
             notes: Array(9).fill(null).map(() => Array(9).fill(null).map(() => [])),
             progress: 81
