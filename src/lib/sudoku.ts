@@ -6,7 +6,7 @@ export type GameDifficulty = "easy" | "medium" | "hard";
 export interface SudokuPuzzle {
     puzzle: string;
     solution: string;
-    difficulty: string;
+    difficulty: GameDifficulty;
 }
 
 export const generatePuzzle = (difficulty: GameDifficulty): SudokuPuzzle => {
@@ -14,7 +14,7 @@ export const generatePuzzle = (difficulty: GameDifficulty): SudokuPuzzle => {
     return {
         puzzle: sudoku.puzzle,
         solution: sudoku.solution,
-        difficulty: sudoku.difficulty,
+        difficulty: sudoku.difficulty as GameDifficulty,
     };
 };
 

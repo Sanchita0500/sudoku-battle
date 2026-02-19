@@ -55,7 +55,7 @@ export const generateSeededPuzzle = (dateString: string, difficulty: GameDifficu
         return {
             puzzle: sudoku.puzzle,
             solution: sudoku.solution,
-            difficulty: sudoku.difficulty,
+            difficulty: sudoku.difficulty as GameDifficulty,
         };
     } finally {
         // Restore Math.random
