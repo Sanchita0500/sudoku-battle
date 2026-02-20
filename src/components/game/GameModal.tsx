@@ -116,8 +116,8 @@ export default function GameModal({
                             </div>
                         </div>
 
-                        {/* Victory Stats */}
-                        {type === 'won' && (time !== undefined || difficulty) && (
+                        {/* Victory Stats - only for normal wins (not when description overrides) */}
+                        {type === 'won' && !description && (time !== undefined || difficulty) && (
                             <div className="mt-6 grid grid-cols-2 gap-3">
                                 {time !== undefined && (
                                     <div className="bg-white/10 rounded-xl p-3 backdrop-blur-md">

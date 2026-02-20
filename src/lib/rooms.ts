@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { ref, set, get, update, child, serverTimestamp, onDisconnect } from "firebase/database";
+import { ref, set, get, update, child, serverTimestamp, onDisconnect, remove } from "firebase/database";
 import { generatePuzzle } from "./sudoku";
 import { GameDifficulty, GameStatus, RoomStatus } from "./types";
 import { z } from "zod";
@@ -170,4 +170,13 @@ export const startGame = async (roomId: string) => {
         solution,
         players: updatedPlayers
     });
+};
+
+/**
+ * Delete a room from Firebase. Called after a game ends and scores are recorded,
+ * so finished rooms don't accumulate in the database.
+ */
+export const deleteRoom = async (roomId: string): Promise<void> => {
+    const roomRef = ref(db, `rooms/${roomId}`);
+    await remove(roomRef);
 };

@@ -38,6 +38,7 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
 
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [showWinModal, setShowWinModal] = useState(false);
 
     const {
         selected,
@@ -86,13 +87,36 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
         if (!isHydrated) return;
 
         resetGame();
+        resetSelection(); // clear any stale number highlights from previous game
         // Start game logic
         useSinglePlayerStore.getState().startGame(difficulty, date);
-        return () => resetGame();
+        return () => { resetGame(); resetSelection(); };
     }, [difficulty, date, isHydrated]); // Restart if difficulty changes or hydration finishes
 
     // Calculate duration for victory modal
     const gameDuration = startTime && endTime ? Math.floor((endTime - startTime) / 1000) : 0;
+
+    // Confetti + delayed win modal so last auto-fill cell renders before modal appears
+    useEffect(() => {
+        if (status === GameStatus.Won) {
+            // Fire confetti
+            const duration = 3000;
+            const end = Date.now() + duration;
+            const frame = () => {
+                confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e'] });
+                confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e'] });
+                if (Date.now() < end) requestAnimationFrame(frame);
+            };
+            confetti({ particleCount: 150, spread: 100, origin: { y: 0.8 }, zIndex: 200 });
+            frame();
+
+            // Delay modal slightly so last auto-fill cell animation is visible
+            const timer = setTimeout(() => setShowWinModal(true), 600);
+            return () => clearTimeout(timer);
+        } else {
+            setShowWinModal(false);
+        }
+    }, [status]);
 
     const handleQuit = () => {
         setShowQuitConfirm(true);
@@ -134,7 +158,7 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
 
     return (
         <div
-            className="flex flex-col items-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 p-2 md:p-8 font-sans text-gray-900 dark:text-gray-100 overflow-x-hidden"
+            className="flex flex-col items-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 px-0 md:p-8 font-sans text-gray-900 dark:text-gray-100 overflow-x-hidden"
             onClick={handleBackgroundClick}
         >
             {/* Header Section */}
@@ -233,7 +257,7 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
                     </button>
                 </div>
 
-                <div className="w-full max-w-[360px] md:max-w-full mx-auto">
+                <div className="w-full md:max-w-full mx-auto">
                     <Board
                         selected={selected}
                         onSelect={(coords) => {
@@ -292,9 +316,8 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
 
 
             {/* Win Modal */}
-            {/* Win Modal */}
             <GameModal
-                isOpen={status === GameStatus.Won}
+                isOpen={showWinModal}
                 type="won"
                 time={gameDuration}
                 difficulty={difficulty}

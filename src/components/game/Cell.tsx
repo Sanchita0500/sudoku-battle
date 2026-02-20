@@ -13,27 +13,30 @@ interface CellProps {
     col: number;
     notes?: number[];
     isAutoFilling?: boolean;
+    isFlashing?: boolean;   // brief green burst when row/col just completed
 }
 
-function Cell({ value, onSelect, isSelected, isInitial, isHighlighted, hasMistake, row, col, notes, isAutoFilling }: CellProps) {
+function Cell({ value, onSelect, isSelected, isInitial, isHighlighted, hasMistake, row, col, notes, isAutoFilling, isFlashing }: CellProps) {
     return (
         <div
             onClick={() => onSelect(row, col)}
             className={twMerge(
-                "relative w-full h-full flex items-center justify-center text-xl md:text-2xl font-bold cursor-pointer select-none transition-all duration-1000 ease-out border border-gray-300",
+                "relative w-full aspect-square flex items-center justify-center text-xl md:text-2xl font-bold cursor-pointer select-none transition-all duration-1000 ease-out border border-gray-300",
                 // Grid Borders (Thick borders for 3x3 boxes)
                 col % 3 === 2 && col !== 8 && "border-r-[3px] border-r-gray-800",
                 row % 3 === 2 && row !== 8 && "border-b-[3px] border-b-gray-800",
-                // Mistake indicator - highest priority
-                hasMistake && "bg-red-100 border-red-400 ring-2 ring-red-300",
+                // Mistake indicator — red text only, no box/ring to avoid size shift
+                hasMistake && "bg-white",
+                // Flash burst: row/col just completed - bright green pulse
+                !hasMistake && isFlashing && "bg-green-300 ring-2 ring-green-500 animate-pulse",
                 // Auto-fill Magic Highlight
-                isAutoFilling && "bg-yellow-100 ring-[3px] ring-yellow-400 z-20 scale-105 shadow-[0_0_15px_rgba(250,204,21,0.6)] duration-75",
+                !hasMistake && !isFlashing && isAutoFilling && "bg-yellow-100 ring-[3px] ring-yellow-400 z-20 scale-105 shadow-[0_0_15px_rgba(250,204,21,0.6)] duration-75",
                 // Selection
-                !hasMistake && !isAutoFilling && isSelected && "bg-indigo-200 ring-2 ring-inset ring-indigo-500",
+                !hasMistake && !isFlashing && !isAutoFilling && isSelected && "bg-indigo-200 ring-2 ring-inset ring-indigo-500",
                 // Highlight matching numbers
-                !hasMistake && !isSelected && !isAutoFilling && isHighlighted && "bg-amber-100",
-                // Initial Value - always dark text for visibility
-                isInitial ? "text-gray-900 font-extrabold" : "text-indigo-600 font-bold",
+                !hasMistake && !isSelected && !isAutoFilling && !isFlashing && isHighlighted && "bg-amber-100",
+                // Text color: red for mistakes, dark for initials, indigo for user-filled
+                hasMistake ? "text-red-500 font-bold" : isInitial ? "text-gray-900 font-extrabold" : "text-indigo-600 font-bold",
                 // Hover
                 !hasMistake && !isSelected && !isAutoFilling && "hover:bg-gray-100"
             )}
@@ -72,7 +75,8 @@ function arePropsEqual(prevProps: CellProps, nextProps: CellProps) {
         prevProps.row !== nextProps.row ||
         prevProps.col !== nextProps.col ||
         prevProps.onSelect !== nextProps.onSelect ||
-        prevProps.isAutoFilling !== nextProps.isAutoFilling
+        prevProps.isAutoFilling !== nextProps.isAutoFilling ||
+        prevProps.isFlashing !== nextProps.isFlashing
     ) {
         return false;
     }

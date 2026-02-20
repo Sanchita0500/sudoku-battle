@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useDebounce } from "use-debounce";
 import confetti from "canvas-confetti";
 import Board from "./Board";
@@ -11,8 +11,9 @@ import { ref, update, onValue } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { countEmptyCells } from "@/lib/utils";
 import Timer from "./Timer";
-import { startGame as fireStartGame } from "@/lib/rooms";
+import { startGame as fireStartGame, deleteRoom } from "@/lib/rooms";
 import { GameStatus, RoomStatus } from "@/lib/types";
+import { recordBattleResult } from "@/lib/battleScores";
 
 import HelpModal from "./HelpModal";
 import GameModal from "./GameModal";
@@ -43,6 +44,9 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
     const isHost = user && ownerId === user.uid;
     // Calculate duration for victory modal
     const gameDuration = startTime && endTime ? Math.floor((endTime - startTime) / 1000) : 0;
+
+    // If gameDuration is 0 (endTime not set locally), it means opponent made 3 mistakes
+    const wonByOpponentMistakes = status === GameStatus.Won && (!endTime || gameDuration === 0);
 
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
     const [canCheckVictory, setCanCheckVictory] = useState(false);
@@ -165,6 +169,20 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         }
     }, [players, status, user, roomId, roomStatus, canCheckVictory]);
 
+    // Record battle result (wins/losses) exactly once when game ends
+    const scoreRecorded = useRef(false);
+    useEffect(() => {
+        if (!user || scoreRecorded.current) return;
+        if (status !== GameStatus.Won && status !== GameStatus.Lost) return;
+
+        scoreRecorded.current = true;
+        const opponents = Object.values(players).filter(p => p.id !== user.uid);
+        opponents.forEach(op => {
+            recordBattleResult(user.uid, op.id, op.name, status === GameStatus.Won)
+                .catch(err => console.error("Failed to record battle result:", err));
+        });
+    }, [status, players, user]);
+
     // Game Over if room is finished and you didn't win
     useEffect(() => {
         if (roomStatus === RoomStatus.Finished && status === GameStatus.Playing && user) {
@@ -260,13 +278,34 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
     const gameStarted = roomStatus !== RoomStatus.Waiting;
 
+    // Delete room when a finished game is exited (host cleans up; 10s delay lets
+    // the other player finish recording their score first).
+    const roomDeleted = useRef(false);
+    const handleExit = () => {
+        const gameFinished =
+            status === GameStatus.Won ||
+            status === GameStatus.Lost ||
+            roomStatus === RoomStatus.Finished;
+
+        if (gameFinished && isHost && roomId && !roomDeleted.current) {
+            roomDeleted.current = true;
+            // Short delay so the opponent can still read their result modal
+            setTimeout(() => {
+                deleteRoom(roomId).catch(err =>
+                    console.error("Failed to delete room:", err)
+                );
+            }, 10_000);
+        }
+        confetti.reset();
+        onExit();
+    };
+
     const handleLeaveGame = () => {
         if (status === GameStatus.Playing && user && roomId) {
             const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
             update(playerRef, { status: GameStatus.Lost });
         }
-        confetti.reset();
-        onExit();
+        handleExit();
     };
 
     if (!gameStarted) {
@@ -321,10 +360,10 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
     }
 
     return (
-        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 p-2 md:p-8 font-sans text-gray-900 dark:text-gray-100 overflow-x-hidden">
+        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-indigo-950 px-0 md:p-8 font-sans text-gray-900 dark:text-gray-100 overflow-x-hidden">
             {/* Battle Status Header */}
-            <div className="w-full max-w-6xl mb-8 space-y-6">
-                <div className="flex flex-wrap gap-4 items-center justify-between">
+            <div className="w-full max-w-6xl mb-2 space-y-2">
+                <div className="flex flex-wrap gap-2 items-center justify-between">
                     <div className="flex items-center gap-4">
                         <button
                             onClick={() => setShowQuitConfirm(true)}
@@ -351,26 +390,24 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
                 {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
 
-                {/* Player Progress Bar */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Player Progress Bar - compact to avoid board scrolling */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {sortedPlayers.map((player) => (
-                        <div key={player.id} className={`p-4 rounded-[1.5rem] shadow-sm border transition-all ${player.id === user?.uid
-                            ? "bg-indigo-600 text-white border-indigo-500 scale-105"
+                        <div key={player.id} className={`p-2 rounded-xl shadow-sm border transition-all ${player.id === user?.uid
+                            ? "bg-indigo-600 text-white border-indigo-500"
                             : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-100 dark:border-gray-700"
                             }`}>
-                            <div className="flex justify-between items-start mb-2">
-                                <span className="font-black truncate max-w-[100px]">{player.name}</span>
-                                <span className={`text-[10px] font-black uppercase tracking-tighter px-2 py-0.5 rounded-full ${player.status === GameStatus.Lost ? "bg-red-500 text-white" : "bg-green-500 text-white"
+                            <div className="flex justify-between items-center gap-1">
+                                <span className="font-black text-xs truncate max-w-[70px]">{player.name}</span>
+                                <span className={`text-[9px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded-full ${player.status === GameStatus.Lost ? "bg-red-500 text-white" : "bg-green-500 text-white"
                                     }`}>
-                                    {player.status === GameStatus.Playing ? "Battle" : player.status}
+                                    {player.status === GameStatus.Playing ? "⚔" : player.status}
                                 </span>
                             </div>
-                            <div className="flex items-baseline gap-1">
-                                <span className="text-2xl font-black">{player.progress}</span>
-                                <span className="text-[10px] font-bold opacity-70">left</span>
-                            </div>
-                            <div className="mt-2 text-[10px] font-black opacity-80 uppercase tracking-widest">
-                                Mistakes: {player.mistakes}/3
+                            <div className="flex items-baseline gap-1 mt-0.5">
+                                <span className="text-lg font-black">{player.progress}</span>
+                                <span className="text-[9px] font-bold opacity-70">left</span>
+                                <span className="text-[9px] font-black opacity-60 ml-auto">{player.mistakes}/3 ❌</span>
                             </div>
                         </div>
                     ))}
@@ -483,7 +520,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                         onClick={() => {
                             setShowQuitConfirm(false);
                             confetti.reset();
-                            onExit();
+                            handleExit();
                         }}
                         className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-colors shadow-lg hover:shadow-xl"
                     >
@@ -520,7 +557,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                 }
             >
                 <button
-                    onClick={() => { confetti.reset(); onExit(); }}
+                    onClick={() => { confetti.reset(); handleExit(); }}
                     className="w-full py-4 bg-white text-gray-900 rounded-xl font-bold text-lg hover:bg-gray-100 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg"
                 >
                     Leave Battle
@@ -531,11 +568,12 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
             <GameModal
                 isOpen={status === GameStatus.Won}
                 type="won"
-                time={gameDuration}
+                time={wonByOpponentMistakes ? undefined : gameDuration}
                 difficulty={difficulty}
+                description={wonByOpponentMistakes ? "Your opponent made 3 mistakes. You win! 🏆" : undefined}
             >
                 <button
-                    onClick={() => { confetti.reset(); onExit(); }}
+                    onClick={() => { confetti.reset(); handleExit(); }}
                     className="w-full py-4 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-colors backdrop-blur-sm border border-white/30 shadow-lg"
                 >
                     Claim Victory

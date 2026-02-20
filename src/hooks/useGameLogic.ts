@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { GameStatus } from "@/lib/types";
 
 interface UseGameLogicProps {
@@ -13,9 +13,56 @@ interface UseGameLogicProps {
 export function useGameLogic({ board, initialBoard, status, setCellValue, toggleNote, mistakeCells }: UseGameLogicProps) {
     const [selected, setSelected] = useState<[number, number] | null>(null);
     const [highlightedNumber, setHighlightedNumber] = useState<number | null>(null);
-    const [fastFillMode, setFastFillMode] = useState(false);
+    const [fastFillMode, _setFastFillMode] = useState(() => {
+        // Read preference from localStorage (safe: returns false if not set or SSR)
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('fast_fill_pref') === 'true';
+        }
+        return false;
+    });
+    const setFastFillMode = (val: boolean) => {
+        _setFastFillMode(val);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('fast_fill_pref', String(val));
+        }
+    };
     const [fastFillNumber, setFastFillNumber] = useState<number | null>(null);
     const [pencilMode, setPencilMode] = useState(false);
+
+    // Auto-advance: read fastFillNumber via ref so setting it doesn't cause cascade re-fires.
+    // The effect only triggers on board/mistakeCells changes (one advance per fill).
+    const fastFillNumberRef = useRef<number | null>(null);
+    useEffect(() => { fastFillNumberRef.current = fastFillNumber; }, [fastFillNumber]);
+
+    useEffect(() => {
+        const num = fastFillNumberRef.current;
+        if (num === null || status === 'won' || status === 'lost') return;
+
+        // Count correct (non-mistake) placements of the active number
+        let count = 0;
+        for (let r = 0; r < 9; r++)
+            for (let c = 0; c < 9; c++)
+                if (board[r][c] === num && !mistakeCells?.has(`${r},${c}`)) count++;
+
+        if (count === 9) {
+            // Cycle forward from num+1 (5→6→7→…→9→1), skip only fully-complete numbers
+            for (let offset = 1; offset <= 9; offset++) {
+                const candidate = ((num - 1 + offset) % 9) + 1;
+                let candidateCount = 0;
+                for (let r = 0; r < 9; r++)
+                    for (let c = 0; c < 9; c++)
+                        if (board[r][c] === candidate && !mistakeCells?.has(`${r},${c}`)) candidateCount++;
+                if (candidateCount < 9) {
+                    setFastFillNumber(candidate);
+                    setHighlightedNumber(candidate);
+                    setSelected(null); // clear selection so no extra indigo highlight alongside amber
+                    break;
+                }
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [board, mistakeCells, status]); // fastFillNumber intentionally omitted — read via ref
+
 
     const handleNumberClick = useCallback((num: number) => {
         if (status === 'won' || status === 'lost') return;
