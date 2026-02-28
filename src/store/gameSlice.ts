@@ -273,6 +273,8 @@ export const createGameSlice: StateCreator<GameSlice, [["zustand/immer", never]]
             state.history = [];
             state.notes = Array(9).fill(null).map(() => Array(9).fill(null).map(() => []));
             state.progress = initialProgress;
+            state.startTime = Date.now(); // Bug 8: restart timer on reset
+            state.endTime = null;
             if (state.status === GameStatus.Lost || state.status === GameStatus.Won) {
                 state.status = GameStatus.Playing;
             }

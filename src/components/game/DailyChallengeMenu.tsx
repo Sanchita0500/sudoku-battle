@@ -101,20 +101,22 @@ export default function DailyChallengeMenu({ onStartDaily, onBack }: DailyChalle
                     {/* Trophy Progress */}
                     <div className="absolute top-4 right-4 flex flex-col items-center z-10">
                         <div className="relative w-12 h-12">
-                            {/* Empty/Background */}
-                            <svg className="w-full h-full text-black/30" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M5 3L4 12H20L19 3H5ZM7 5H17L17.5 10H6.5L7 5Z" opacity="0.5" />
+                            {/* Empty/grey silhouette — always fully visible */}
+                            <svg className="w-full h-full text-black/30 absolute inset-0" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M19 3H5C3.9 3 3 3.9 3 5V9C3 11.21 4.79 13 7 13V14C7 16.21 8.79 18 11 18H13C15.21 18 17 16.21 17 14V13C19.21 13 21 11.21 21 9V5C21 3.9 20.1 3 19 3ZM7 11C5.9 11 5 10.1 5 9V5H7V11ZM17 11V5H19V9C19 10.1 18.1 11 17 11Z" />
                                 <path d="M12 20C10.9 20 10 20.9 10 22H14C14 20.9 13.1 20 12 20Z" />
                             </svg>
 
-                            {/* Filled Overlay */}
-                            <div className="absolute bottom-0 left-0 w-full overflow-hidden transition-all duration-1000 ease-out" style={{ height: `${progressPercent}%` }}>
-                                <svg className="w-12 h-12 text-yellow-300 drop-shadow-md" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M19 3H5C3.9 3 3 3.9 3 5V9C3 11.21 4.79 13 7 13V14C7 16.21 8.79 18 11 18H13C15.21 18 17 16.21 17 14V13C19.21 13 21 11.21 21 9V5C21 3.9 20.1 3 19 3ZM7 11C5.9 11 5 10.1 5 9V5H7V11ZM17 11V5H19V9C19 10.1 18.1 11 17 11Z" />
-                                    <path d="M12 20C10.9 20 10 20.9 10 22H14C14 20.9 13.1 20 12 20Z" />
-                                </svg>
-                            </div>
+                            {/* Gold fill — clipped from the top down based on progress */}
+                            <svg
+                                className="w-full h-full text-yellow-300 drop-shadow-md absolute inset-0 transition-all duration-1000 ease-out"
+                                style={{ clipPath: `inset(${100 - progressPercent}% 0 0 0)` }}
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path d="M19 3H5C3.9 3 3 3.9 3 5V9C3 11.21 4.79 13 7 13V14C7 16.21 8.79 18 11 18H13C15.21 18 17 16.21 17 14V13C19.21 13 21 11.21 21 9V5C21 3.9 20.1 3 19 3ZM7 11C5.9 11 5 10.1 5 9V5H7V11ZM17 11V5H19V9C19 10.1 18.1 11 17 11Z" />
+                                <path d="M12 20C10.9 20 10 20.9 10 22H14C14 20.9 13.1 20 12 20Z" />
+                            </svg>
                         </div>
                         <span className="text-[10px] font-black uppercase text-yellow-100 mt-1 tracking-wider">{completedInMonth}/{daysInMonth}</span>
                     </div>

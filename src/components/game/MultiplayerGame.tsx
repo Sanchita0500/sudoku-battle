@@ -184,50 +184,38 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
     }, [status, players, user]);
 
     // Game Over if room is finished and you didn't win
+    // Bug 4: delay before marking Lost so a simultaneous Win update can arrive first (prevents tie glitch)
     useEffect(() => {
         if (roomStatus === RoomStatus.Finished && status === GameStatus.Playing && user) {
             const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
-            update(playerRef, { status: GameStatus.Lost });
+            const t = setTimeout(() => {
+                // Re-check: if we've won in the meantime, don't overwrite
+                if (useMultiplayerStore.getState().status !== GameStatus.Won) {
+                    update(playerRef, { status: GameStatus.Lost });
+                }
+            }, 1500);
+            return () => clearTimeout(t);
         }
     }, [roomStatus, status, user, roomId]);
 
-    // Victory Confetti
+    // Victory Confetti — Bug 1: track RAF so it stops when user exits
     useEffect(() => {
         if (status === GameStatus.Won) {
-            // Blow up from the bottom
             const duration = 3000;
             const end = Date.now() + duration;
+            let rafId: number;
+            let cancelled = false;
 
             const frame = () => {
-                confetti({
-                    particleCount: 5,
-                    angle: 60,
-                    spread: 55,
-                    origin: { x: 0 },
-                    colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e']
-                });
-                confetti({
-                    particleCount: 5,
-                    angle: 120,
-                    spread: 55,
-                    origin: { x: 1 },
-                    colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e']
-                });
-
-                if (Date.now() < end) {
-                    requestAnimationFrame(frame);
-                }
+                if (cancelled) return;
+                confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e'] });
+                confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e'] });
+                if (Date.now() < end) rafId = requestAnimationFrame(frame);
             };
 
-            // Initial burst
-            confetti({
-                particleCount: 150,
-                spread: 100,
-                origin: { y: 0.8 },
-                zIndex: 200
-            });
-
+            confetti({ particleCount: 150, spread: 100, origin: { y: 0.8 }, zIndex: 200 });
             frame();
+            return () => { cancelled = true; cancelAnimationFrame(rafId); confetti.reset(); };
         }
     }, [status]);
 
@@ -574,7 +562,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
             >
                 <button
                     onClick={() => { confetti.reset(); handleExit(); }}
-                    className="w-full py-4 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-colors backdrop-blur-sm border border-white/30 shadow-lg"
+                    className="w-full py-4 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl font-bold transition-colors shadow-lg"
                 >
                     Claim Victory
                 </button>

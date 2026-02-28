@@ -72,8 +72,7 @@ export function useGameLogic({ board, initialBoard, status, setCellValue, toggle
 
         if (fastFillMode) {
             setHighlightedNumber(num);
-            // DON'T clear selection in fast fill mode - this allows one-click filling
-            // The cell click handler will do the filling directly
+            setSelected(null); // Bug 2: clear stale selection so no extra indigo highlight
         } else {
             // Only clear selection when NOT in fast fill mode
             if (!pencilMode) {

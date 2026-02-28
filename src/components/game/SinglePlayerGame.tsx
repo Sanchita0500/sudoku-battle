@@ -39,6 +39,7 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
     const [showQuitConfirm, setShowQuitConfirm] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
     const [showWinModal, setShowWinModal] = useState(false);
+    const [showMonthTrophy, setShowMonthTrophy] = useState(false);
 
     const {
         selected,
@@ -99,20 +100,23 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
     // Confetti + delayed win modal so last auto-fill cell renders before modal appears
     useEffect(() => {
         if (status === GameStatus.Won) {
-            // Fire confetti
+            // Bug 1: track RAF id so we can cancel when user exits
             const duration = 3000;
             const end = Date.now() + duration;
+            let rafId: number;
+            let cancelled = false;
             const frame = () => {
+                if (cancelled) return;
                 confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e'] });
                 confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#6366f1', '#a855f7', '#ec4899', '#eab308', '#22c55e'] });
-                if (Date.now() < end) requestAnimationFrame(frame);
+                if (Date.now() < end) rafId = requestAnimationFrame(frame);
             };
             confetti({ particleCount: 150, spread: 100, origin: { y: 0.8 }, zIndex: 200 });
             frame();
 
             // Delay modal slightly so last auto-fill cell animation is visible
             const timer = setTimeout(() => setShowWinModal(true), 600);
-            return () => clearTimeout(timer);
+            return () => { cancelled = true; cancelAnimationFrame(rafId); confetti.reset(); clearTimeout(timer); };
         } else {
             setShowWinModal(false);
         }
@@ -144,14 +148,35 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
         resetSelection();
     };
 
-    // Save Daily Completion
+    // Save Daily Completion + Bug 5: detect end-of-month completion
     useEffect(() => {
         if (status === GameStatus.Won && date) {
             const saved = localStorage.getItem("daily_completed");
-            const completed = saved ? JSON.parse(saved) : [];
+            const completed: string[] = saved ? JSON.parse(saved) : [];
             if (!completed.includes(date)) {
                 completed.push(date);
                 localStorage.setItem("daily_completed", JSON.stringify(completed));
+
+                // Check if ALL days up to today in this month are now complete
+                const d = new Date(date);
+                const year = d.getFullYear();
+                const month = d.getMonth();
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const lastPlayable = new Date(Math.min(
+                    new Date(year, month + 1, 0).getTime(), // last day of month
+                    today.getTime()
+                ));
+                const daysToCheck = lastPlayable.getDate();
+                const allDone = Array.from({ length: daysToCheck }, (_, i) => {
+                    const dt = new Date(year, month, i + 1);
+                    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                }).every(ds => completed.includes(ds));
+
+                if (allDone) {
+                    // Delay so win modal appears first, then trophy popup
+                    setTimeout(() => setShowMonthTrophy(true), 900);
+                }
             }
         }
     }, [status, date]);
@@ -166,7 +191,7 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
                 <div className="flex items-center justify-between mb-4">
                     <button
                         onClick={() => setShowQuitConfirm(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-750 font-semibold text-xs md:text-sm shadow-sm transition-all duration-200 hover:shadow-md"
+                        className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 font-semibold text-xs md:text-sm shadow-sm transition-all duration-200 hover:shadow-md"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -315,6 +340,24 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
             </GameModal>
 
 
+            {/* Month Trophy Popup (Bug 5) */}
+            {showMonthTrophy && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowMonthTrophy(false)} />
+                    <div className="relative bg-gradient-to-br from-yellow-400 to-amber-500 rounded-3xl p-8 text-center shadow-2xl animate-in zoom-in-95 duration-300 max-w-xs w-full">
+                        <div className="text-7xl mb-4">🏆</div>
+                        <h2 className="text-2xl font-black text-white mb-2">Month Complete!</h2>
+                        <p className="text-yellow-100 font-semibold text-sm mb-6">You've completed every puzzle this month. Incredible!</p>
+                        <button
+                            onClick={() => setShowMonthTrophy(false)}
+                            className="w-full py-3 bg-white text-amber-600 rounded-xl font-black text-lg hover:bg-yellow-50 transition-colors shadow-lg"
+                        >
+                            Claim Trophy 🎉
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Win Modal */}
             <GameModal
                 isOpen={showWinModal}
@@ -324,8 +367,8 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
             >
                 <div className="flex gap-3 justify-center w-full">
                     <button
-                        onClick={onExit}
-                        className="flex-1 px-4 py-3 bg-white/20 hover:bg-white/30 text-white rounded-xl font-bold transition-colors backdrop-blur-sm"
+                        onClick={() => { confetti.reset(); onExit(); }}
+                        className="flex-1 px-4 py-3 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl font-bold transition-colors shadow-lg"
                     >
                         Claim Victory
                     </button>
