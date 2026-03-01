@@ -120,13 +120,13 @@ export default function GameModal({
                         {type === 'won' && !description && (time !== undefined || difficulty) && (
                             <div className="mt-6 grid grid-cols-2 gap-3">
                                 {time !== undefined && (
-                                    <div className="bg-white/10 rounded-xl p-3 backdrop-blur-md">
+                                    <div className="bg-white/10 rounded-xl p-3">
                                         <div className="text-[10px] font-bold text-white/60 uppercase tracking-wider">Time</div>
                                         <div className="text-2xl font-black text-white font-mono">{formatTime(time)}</div>
                                     </div>
                                 )}
                                 {difficulty && (
-                                    <div className="bg-white/10 rounded-xl p-3 backdrop-blur-md">
+                                    <div className="bg-white/10 rounded-xl p-3">
                                         <div className="text-[10px] font-bold text-white/60 uppercase tracking-wider">Level</div>
                                         <div className="text-lg font-black text-white capitalize">{difficulty}</div>
                                     </div>

@@ -163,10 +163,7 @@ export default function SinglePlayerGame({ difficulty, date, onExit }: SinglePla
                 const month = d.getMonth();
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
-                const lastPlayable = new Date(Math.min(
-                    new Date(year, month + 1, 0).getTime(), // last day of month
-                    today.getTime()
-                ));
+                const lastPlayable = new Date(year, month + 1, 0); // last day of month
                 const daysToCheck = lastPlayable.getDate();
                 const allDone = Array.from({ length: daysToCheck }, (_, i) => {
                     const dt = new Date(year, month, i + 1);

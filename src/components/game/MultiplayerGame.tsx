@@ -7,7 +7,7 @@ import { useMultiplayerStore } from "@/hooks/useMultiplayerStore";
 import { useGameLogic } from "@/hooks/useGameLogic";
 import { useAuth } from "@/context/AuthContext";
 import { useRoomListener } from "@/hooks/useRoomListener";
-import { ref, update, onValue } from "firebase/database";
+import { ref, update, onValue, serverTimestamp } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { countEmptyCells } from "@/lib/utils";
 import Timer from "./Timer";
@@ -150,17 +150,12 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
     useEffect(() => {
         if (!user || status !== GameStatus.Playing || roomStatus !== RoomStatus.Playing) return;
 
-        // Wait for safety delay
         if (!canCheckVictory) return;
 
         const otherPlayers = Object.values(players).filter(p => p.id !== user.uid);
         if (otherPlayers.length > 0) {
-            // Only auto-win if ALL other players have explicitly LOST.
-            // If they are simply 'Idle' or disconnected (not in list), we play on.
             const allOthersLost = otherPlayers.every(p => p.status === GameStatus.Lost);
-
             if (allOthersLost) {
-                // You are the last one standing!
                 const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
                 const roomRef = ref(db, `rooms/${roomId}`);
                 update(playerRef, { status: GameStatus.Won });
@@ -169,38 +164,68 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         }
     }, [players, status, user, roomId, roomStatus, canCheckVictory]);
 
+    // Immediate win push with precise server timestamp to prevent ties
+    const hasPushedWin = useRef(false);
+    useEffect(() => {
+        if (status === GameStatus.Won && user && roomId && !hasPushedWin.current && !wonByOpponentMistakes) {
+            hasPushedWin.current = true;
+            const dbRef = ref(db);
+            const updates: Record<string, any> = {
+                [`rooms/${roomId}/players/${user.uid}/progress`]: 0,
+                [`rooms/${roomId}/players/${user.uid}/status`]: GameStatus.Won,
+                [`rooms/${roomId}/players/${user.uid}/completed`]: true,
+                [`rooms/${roomId}/players/${user.uid}/finishedAt`]: serverTimestamp(),
+                [`rooms/${roomId}/status`]: RoomStatus.Finished
+            };
+            update(dbRef, updates);
+        }
+    }, [status, user, roomId, wonByOpponentMistakes]);
+
+    // Calculate precise battle outcome
+    const battleOutcome = useMemo(() => {
+        if (status === GameStatus.Lost) return GameStatus.Lost;
+
+        if (roomStatus === RoomStatus.Finished) {
+            // Find who won by looking at finishedAt timestamps.
+            const completedPlayers = Object.values(players).filter(p => (p as any).finishedAt);
+            if (completedPlayers.length > 0) {
+                // sort by finishedAt ascending
+                completedPlayers.sort((a, b) => (a as any).finishedAt - (b as any).finishedAt);
+                const winner = completedPlayers[0];
+                if (winner.id === user?.uid) {
+                    return GameStatus.Won;
+                } else {
+                    return GameStatus.Lost;
+                }
+            } else {
+                // Fallback for wonByOpponentMistakes or older clients
+                if (status === GameStatus.Won && wonByOpponentMistakes) return GameStatus.Won;
+                const oldWinner = Object.values(players).find(p => p.status === GameStatus.Won);
+                if (oldWinner) {
+                    return oldWinner.id === user?.uid ? GameStatus.Won : GameStatus.Lost;
+                }
+            }
+        }
+        return null;
+    }, [status, roomStatus, players, user, wonByOpponentMistakes]);
+
     // Record battle result (wins/losses) exactly once when game ends
     const scoreRecorded = useRef(false);
     useEffect(() => {
         if (!user || scoreRecorded.current) return;
-        if (status !== GameStatus.Won && status !== GameStatus.Lost) return;
+        if (battleOutcome !== GameStatus.Won && battleOutcome !== GameStatus.Lost) return;
 
         scoreRecorded.current = true;
         const opponents = Object.values(players).filter(p => p.id !== user.uid);
         opponents.forEach(op => {
-            recordBattleResult(user.uid, op.id, op.name, status === GameStatus.Won)
+            recordBattleResult(user.uid, op.id, op.name, battleOutcome === GameStatus.Won)
                 .catch(err => console.error("Failed to record battle result:", err));
         });
-    }, [status, players, user]);
+    }, [battleOutcome, players, user]);
 
-    // Game Over if room is finished and you didn't win
-    // Bug 4: delay before marking Lost so a simultaneous Win update can arrive first (prevents tie glitch)
+    // Victory Confetti
     useEffect(() => {
-        if (roomStatus === RoomStatus.Finished && status === GameStatus.Playing && user) {
-            const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
-            const t = setTimeout(() => {
-                // Re-check: if we've won in the meantime, don't overwrite
-                if (useMultiplayerStore.getState().status !== GameStatus.Won) {
-                    update(playerRef, { status: GameStatus.Lost });
-                }
-            }, 1500);
-            return () => clearTimeout(t);
-        }
-    }, [roomStatus, status, user, roomId]);
-
-    // Victory Confetti — Bug 1: track RAF so it stops when user exits
-    useEffect(() => {
-        if (status === GameStatus.Won) {
+        if (battleOutcome === GameStatus.Won) {
             const duration = 3000;
             const end = Date.now() + duration;
             let rafId: number;
@@ -217,37 +242,31 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
             frame();
             return () => { cancelled = true; cancelAnimationFrame(rafId); confetti.reset(); };
         }
-    }, [status]);
+    }, [battleOutcome]);
 
     // Debounce board state changes to reduce Firebase writes
-    // Updates will fire at most once every 500ms instead of on every move
     const [debouncedBoard] = useDebounce(board, 500);
     const [debouncedMistakes] = useDebounce(mistakes, 500);
     const [debouncedStatus] = useDebounce(status, 500);
     const [debouncedProgress] = useDebounce(progress, 500);
 
-    // Effect to update player progress & mistakes & status in Firebase
+    // Effect to update player progress & mistakes in Firebase
     useEffect(() => {
         if (!user || !roomId || debouncedStatus === GameStatus.Idle) return;
 
-        const dbRef = ref(db);
+        // Skip if outcome is decided (to prevent overwriting state back to Lost/Won inaccurately)
+        if (battleOutcome) return;
 
-        // Batch all updates into a single object
+        const dbRef = ref(db);
         const batchedUpdates: Record<string, any> = {
             [`rooms/${roomId}/players/${user.uid}/progress`]: debouncedProgress,
             [`rooms/${roomId}/players/${user.uid}/mistakes`]: debouncedMistakes,
             [`rooms/${roomId}/players/${user.uid}/status`]: debouncedStatus
         };
 
-        if (debouncedStatus === GameStatus.Won) {
-            batchedUpdates[`rooms/${roomId}/players/${user.uid}/completed`] = true;
-            batchedUpdates[`rooms/${roomId}/status`] = RoomStatus.Finished; // Update room status in same call
-        }
-
-        // Single atomic update instead of multiple calls
         update(dbRef, batchedUpdates);
 
-    }, [debouncedBoard, debouncedMistakes, debouncedStatus, debouncedProgress, user, roomId]);
+    }, [debouncedBoard, debouncedMistakes, debouncedStatus, debouncedProgress, user, roomId, battleOutcome]);
 
 
 
@@ -525,7 +544,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
             {/* Game Over / Lost Modal */}
             <GameModal
-                isOpen={status === GameStatus.Lost}
+                isOpen={battleOutcome === GameStatus.Lost}
                 title="DEFEAT"
                 description={
                     <>
@@ -554,7 +573,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
 
             {/* Victory Modal */}
             <GameModal
-                isOpen={status === GameStatus.Won}
+                isOpen={battleOutcome === GameStatus.Won}
                 type="won"
                 time={wonByOpponentMistakes ? undefined : gameDuration}
                 difficulty={difficulty}
