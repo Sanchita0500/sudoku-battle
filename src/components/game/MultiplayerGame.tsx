@@ -160,6 +160,10 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                 const roomRef = ref(db, `rooms/${roomId}`);
                 update(playerRef, { status: GameStatus.Won });
                 update(roomRef, { status: RoomStatus.Finished });
+                useMultiplayerStore.setState((state) => {
+                    state.status = GameStatus.Won;
+                    state.endTime = Date.now();
+                });
             }
         }
     }, [players, status, user, roomId, roomStatus, canCheckVictory]);
@@ -186,6 +190,11 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         if (status === GameStatus.Lost) return GameStatus.Lost;
 
         if (roomStatus === RoomStatus.Finished) {
+            // Check if we won because the opponent made 3 mistakes (they have status array with Lost, we have Won, but no finishedAt)
+            if (status === GameStatus.Won && wonByOpponentMistakes) {
+                return GameStatus.Won;
+            }
+
             // Find who won by looking at finishedAt timestamps.
             const completedPlayers = Object.values(players).filter(p => (p as any).finishedAt);
             if (completedPlayers.length > 0) {
@@ -198,8 +207,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                     return GameStatus.Lost;
                 }
             } else {
-                // Fallback for wonByOpponentMistakes or older clients
-                if (status === GameStatus.Won && wonByOpponentMistakes) return GameStatus.Won;
+                // Fallback for older clients
                 const oldWinner = Object.values(players).find(p => p.status === GameStatus.Won);
                 if (oldWinner) {
                     return oldWinner.id === user?.uid ? GameStatus.Won : GameStatus.Lost;
@@ -247,12 +255,11 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
     // Debounce board state changes to reduce Firebase writes
     const [debouncedBoard] = useDebounce(board, 500);
     const [debouncedMistakes] = useDebounce(mistakes, 500);
-    const [debouncedStatus] = useDebounce(status, 500);
     const [debouncedProgress] = useDebounce(progress, 500);
 
     // Effect to update player progress & mistakes in Firebase
     useEffect(() => {
-        if (!user || !roomId || debouncedStatus === GameStatus.Idle) return;
+        if (!user || !roomId || status === GameStatus.Idle) return;
 
         // Skip if outcome is decided (to prevent overwriting state back to Lost/Won inaccurately)
         if (battleOutcome) return;
@@ -261,12 +268,12 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
         const batchedUpdates: Record<string, any> = {
             [`rooms/${roomId}/players/${user.uid}/progress`]: debouncedProgress,
             [`rooms/${roomId}/players/${user.uid}/mistakes`]: debouncedMistakes,
-            [`rooms/${roomId}/players/${user.uid}/status`]: debouncedStatus
+            [`rooms/${roomId}/players/${user.uid}/status`]: status
         };
 
         update(dbRef, batchedUpdates);
 
-    }, [debouncedBoard, debouncedMistakes, debouncedStatus, debouncedProgress, user, roomId, battleOutcome]);
+    }, [debouncedBoard, debouncedMistakes, status, debouncedProgress, user, roomId, battleOutcome]);
 
 
 
@@ -333,9 +340,9 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                                     <div key={player.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl border-2 border-gray-100 dark:border-gray-700">
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-black">
-                                                {player.name[0].toUpperCase()}
+                                                {player.name && player.name.length > 0 ? player.name[0].toUpperCase() : 'U'}
                                             </div>
-                                            <span className="font-bold text-gray-900 dark:text-gray-100">{player.name} {player.id === user?.uid && "(You)"}</span>
+                                            <span className="font-bold text-gray-900 dark:text-gray-100">{player.name || "Unknown"} {player.id === user?.uid && "(You)"}</span>
                                         </div>
                                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-sm shadow-green-500/50"></div>
                                     </div>
@@ -405,7 +412,7 @@ export default function MultiplayerGame({ roomId, onExit }: MultiplayerGameProps
                             : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-100 dark:border-gray-700"
                             }`}>
                             <div className="flex justify-between items-center gap-1">
-                                <span className="font-black text-xs truncate max-w-[70px]">{player.name}</span>
+                                <span className="font-black text-xs truncate max-w-[70px]">{player.name || "Unknown"}</span>
                                 <span className={`text-[9px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded-full ${player.status === GameStatus.Lost ? "bg-red-500 text-white" : "bg-green-500 text-white"
                                     }`}>
                                     {player.status === GameStatus.Playing ? "⚔" : player.status}
